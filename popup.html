@@ -1,0 +1,610 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Text Snapper</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      width: 400px;
+      height: 600px;       /* use height instead of max-height */
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+      color: #333;
+      overflow: hidden;    /* prevent body from scrolling */
+    }
+
+    .container {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      background: white;
+      overflow: hidden;    /* keep scrolling inside content only */
+    }
+
+    .header {
+      background: #783393;
+      color: white;
+      padding: 15px 25px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+      flex-shrink: 0;      /* important: header stays fixed height */
+      position: sticky;    /* optional but good */
+      top: 0;
+      z-index: 10;
+    }
+
+    .content {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px 20px;
+      min-height: 0;       /* important in flex layouts */
+    }
+
+    .header h1 {
+      color: #4A205B;
+      font-size: 18px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .header-icon {
+      width: 40px;
+      height: 40px;
+      display: block;
+    }
+
+    .controls {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+      margin-left: auto;
+    }
+
+    .export-controls {
+      display: flex;
+      gap: 4px;
+      align-items: center;
+    }
+
+
+    button {
+      padding: 8px 12px;
+      border: none;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .btn-snap {
+      background: #ef4581be;
+      color: #F1F1F2;
+      padding: 10px 16px;
+      font-size: 14px;
+      font-weight: 600;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .btn-snap:hover {
+      background: #DB3F78;
+    }
+
+    .btn-icon {
+      width: 20px;
+      height: 20px;
+      display: block;
+      flex-shrink: 0;
+    }
+
+    .btn-snap:active {
+      transform: translateY(0);
+    }
+
+    .btn-snap.loading {
+      opacity: 0.7;
+      pointer-events: none;
+    }
+
+    .btn-secondary {
+      background: #e5e7eb;
+      color: #374151;
+      padding: 6px 10px;
+      font-size: 12px;
+    }
+
+    .btn-secondary:hover {
+      background: #d1d5db;
+    }
+
+    .btn-danger {
+      background: #ef4444;
+      color: white;
+      padding: 6px 10px;
+      font-size: 12px;
+    }
+
+    .btn-danger:hover {
+      background: #dc2626;
+    }
+
+    .empty-state {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      color: #9ca3af;
+      text-align: center;
+    }
+
+    .sleepy-icon {
+      width: 160px;
+      height: 160px;
+      display: block;
+    }
+
+    .empty-icon {
+      font-size: 48px;
+      margin-bottom: 12px;
+      opacity: 0.5;
+    }
+
+    .empty-state p {
+      font-size: 14px;
+      margin-bottom: 4px;
+    }
+
+    .empty-state small {
+      font-size: 12px;
+      color: #d1d5db;
+    }
+
+    .snapshot-item {
+      background: #ffffff;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      padding: 12px;
+      margin-bottom: 12px;
+      transition: all 0.2s ease;
+    }
+
+    .snapshot-item:hover {
+      background: #f27c213b;
+      border-color: #d1d5db;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+    }
+
+    .snapshot-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 8px;
+    }
+
+    .snapshot-title {
+      font-weight: 600;
+      font-size: 13px;
+      color: #1f2937;
+      flex: 1;
+      word-break: break-word;
+      margin-right: 8px;
+    }
+
+    .snapshot-time {
+      font-size: 11px;
+      color: #9ca3af;
+      white-space: nowrap;
+    }
+
+    .snapshot-url {
+      font-size: 11px;
+      color: #667eea;
+      text-decoration: none;
+      word-break: break-all;
+      display: inline-block;
+      margin-bottom: 8px;
+      max-width: 100%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .snapshot-url:hover {
+      text-decoration: underline;
+    }
+
+    .snapshot-preview {
+      font-size: 12px;
+      color: #6b7280;
+      background: rgba(255, 255, 255, 0.329);
+      padding: 8px;
+      border-radius: 4px;
+      border-left: 3px solid #F27C21;
+      margin-bottom: 8px;
+      max-height: 60px;
+      overflow: hidden;
+      line-height: 1.4;
+    }
+    
+    .dropdown {
+      position: relative;
+    }
+
+      .dropdown-toggle {
+        min-width: 84px;
+      }
+
+      .dropdown-menu {
+        display: none;
+        position: absolute;
+        top: calc(100% + 6px);
+        left: 0;
+        background: white;
+        border: 1px solid #e5e7eb;
+        border-radius: 8px;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+        min-width: 120px;
+        overflow: hidden;
+        z-index: 100;
+      }
+
+      .dropdown-menu.show {
+        display: block;
+      }
+
+      .dropdown-item {
+        width: 100%;
+        border: none;
+        background: #72278f;
+        color: white;
+        padding: 10px 12px;
+        text-align: left;
+        font-size: 14px;
+        font-weight: 600;
+        display: inline-flex;
+        border-radius: 0;
+        cursor: pointer;
+      }
+
+      .dropdown-item:hover {
+        background: #DB3F78;
+      }
+    .snapshot-actions {
+      display: flex;
+      gap: 6px;
+    }
+
+    .btn-small {
+      padding: 6px 8px;
+      font-size: 11px;
+      border-radius: 4px;
+      border: none;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .btn-copy,
+    .btn-delete,
+    .dropdown-toggle {
+      background: transparent;
+      color: white;
+    }
+
+    .btn-delete {
+      background: rgba(255, 255, 255, 0);
+      color: #ffffffb6;
+    }
+
+    .btn-delete:hover {
+      color: #ffffffb6;
+    }
+
+    .top-actions {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 8px;
+      padding: 4px 20px;
+      background: #72278f;
+      flex-shrink: 0;
+    }
+
+    .top-action-btn {
+      min-width: 84px;
+      justify-content: center;
+      align-items: center;
+      text-align: center;
+      font-size: 14px;
+      font-weight: 600;
+      display: inline-flex;
+      padding: 10px 12px;
+    }
+
+    .toast {
+      position: fixed;
+      bottom: 16px;
+      right: 16px;
+      background: #10b981;
+      color: white;
+      padding: 12px 16px;
+      border-radius: 6px;
+      font-size: 13px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+      animation: slideIn 0.3s ease;
+      z-index: 1000;
+    }
+
+    .toast.error {
+      background: #ef4444;
+    }
+
+    @keyframes slideIn {
+      from {
+        transform: translateX(400px);
+        opacity: 0;
+      }
+      to {
+        transform: translateX(0);
+        opacity: 1;
+      }
+    }
+
+    .stats {
+      background: #ffffff;
+      color: #9ca3af;
+      align-items: center;
+      text-align: center;
+      padding: 10px 25px;
+      font-size: 13px;
+    }
+
+    .stats strong {
+      font-weight: 600;
+    }
+
+    .storage-info {
+      background: #f3f4f6;
+      border: 1px solid #e5e7eb;
+      border-radius: 6px;
+      padding: 10px 12px;
+      margin-bottom: 12px;
+      font-size: 12px;
+      color: #6b7280;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .storage-info-text {
+      flex: 1;
+    }
+
+    .btn-open-storage {
+      background: #3b82f6;
+      color: white;
+      padding: 4px 8px;
+      font-size: 11px;
+      border-radius: 4px;
+      border: none;
+      cursor: pointer;
+      white-space: nowrap;
+      margin-left: 8px;
+      transition: all 0.2s ease;
+    }
+
+    .btn-open-storage:hover {
+      background: #2563eb;
+    }
+
+    .token-limit-control {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: white;
+      border: 1px solid #d1d5db;
+      border-radius: 6px;
+      padding: 4px 8px;
+    }
+
+    .token-limit-control label {
+      font-size: 11px;
+      color: #6b7280;
+      white-space: nowrap;
+    }
+
+    .token-limit-control input {
+      width: 60px;
+      padding: 4px 6px;
+      border: 1px solid #e5e7eb;
+      border-radius: 4px;
+      font-size: 11px;
+      text-align: center;
+    }
+
+    .token-limit-control input:focus {
+      outline: none;
+      border-color: #667eea;
+      box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.1);
+    }
+
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.5);
+      z-index: 999;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .modal-overlay.active {
+      display: flex;
+    }
+
+    .modal-content {
+      background: white;
+      border-radius: 8px;
+      padding: 24px;
+      max-width: 400px;
+      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+    }
+
+    .modal-content h2 {
+      font-size: 16px;
+      margin-bottom: 12px;
+      color: #1f2937;
+    }
+
+    .modal-content p {
+      font-size: 13px;
+      color: #6b7280;
+      margin-bottom: 16px;
+      line-height: 1.5;
+    }
+
+    .modal-content input {
+      width: 100%;
+      padding: 8px 12px;
+      border: 1px solid #d1d5db;
+      border-radius: 6px;
+      font-size: 13px;
+      margin-bottom: 16px;
+    }
+
+    .modal-content input:focus {
+      outline: none;
+      border-color: #667eea;
+      box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.1);
+    }
+
+    .modal-buttons {
+      display: flex;
+      gap: 8px;
+      justify-content: flex-end;
+    }
+
+    .modal-buttons button {
+      padding: 8px 16px;
+      border: none;
+      border-radius: 6px;
+      font-size: 13px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .modal-buttons .btn-cancel {
+      background: #e5e7eb;
+      color: #374151;
+    }
+
+    .modal-buttons .btn-cancel:hover {
+      background: #d1d5db;
+    }
+
+    .modal-buttons .btn-confirm {
+      background: #667eea;
+      color: white;
+    }
+
+    .modal-buttons .btn-confirm:hover {
+      background: #5a67d8;
+    }
+
+    ::-webkit-scrollbar {
+      width: 6px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: #f3f4f6;
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: #d1d5db;
+      border-radius: 3px;
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+      background: #9ca3af;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>
+        <img src="assets/sleepy_mane.png" alt="mane" class="header-icon" id="popIcon" />
+      </h1>
+      <div class="controls">
+        <button class="btn-snap" id="snapBtn">
+          <img src="assets/bookmark.svg" alt="" class="btn-icon">
+          <span id="snapText">Manemark</span>
+        </button>
+      </div>
+    </div>
+
+    <div class="top-actions">
+      <div class="dropdown">
+        <button class="btn-small top-action-btn dropdown-toggle" id="exportMenuBtn">
+          Export ▾
+        </button>
+        <div class="dropdown-menu" id="exportMenu">
+          <button class="dropdown-item" id="exportJsonBtn">JSON</button>
+          <button class="dropdown-item" id="exportZipBtn">ZIP</button>
+        </div>
+      </div>
+
+      <button class="btn-small btn-copy top-action-btn" id="importBtn">Import</button>
+      <button class="btn-small btn-delete top-action-btn" id="clearAllBtn">Clear</button>
+      <input type="file" id="importFile" accept=".json" style="display: none;">
+    </div>
+
+    <div class="content">
+
+      <div id="snapshotsList"></div>
+      <div id="emptyState" class="empty-state">
+        <div class="empty-icon"><img src="assets/sleepy_mane.png" alt="" class="sleepy-icon"></div>
+        
+        <h1>No Manemark yet</h1>
+        <p>Click "Manemark" to capture text from this page</p>
+      </div>
+
+    </div>
+    <div id="statsContainer"></div>
+
+  </div>
+
+  <!-- Token Limit Modal -->
+  <div class="modal-overlay" id="tokenModal">
+    <div class="modal-content">
+      <h2>Set Token Limit per File</h2>
+      <p>Enter the maximum number of tokens per JSON file. Snapshots will be automatically split across files to respect this limit.</p>
+      <input type="number" id="modalTokenLimit" value="4000" min="500" max="100000" step="500">
+      <div class="modal-buttons">
+        <button class="btn-cancel" id="modalCancel">Cancel</button>
+        <button class="btn-confirm" id="modalConfirm">Export</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="jszip.min.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>
