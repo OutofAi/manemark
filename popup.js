@@ -188,9 +188,13 @@ function handleImport(event) {
         snapshots = data;
       } else if (data.snapshots && Array.isArray(data.snapshots)) {
         snapshots = data.snapshots;
+      } else if (data.manemarks && Array.isArray(data.manemarks)) {
+        snapshots = data.manemarks;
       } else if (data.chunk_number !== undefined) {
-        snapshots = data.snapshots || [];
+        snapshots = data.snapshots || data.manemarks || [];
       }
+
+      snapshots = snapshots.map(normalizeSnapshotForExport);
 
       if (snapshots.length === 0) {
         showToast('No valid manemark found in file', 'error');
@@ -471,6 +475,72 @@ function calculateSnapshotTokens(snapshot) {
   return textTokens + titleTokens + urlTokens + overhead;
 }
 
+function buildRagChunksForSnapshot(snapshot) {
+  if (Array.isArray(snapshot.chunks) && snapshot.chunks.length > 0) {
+    return snapshot.chunks.map((chunk, index) => ({
+      chunk_id: chunk.chunk_id || `${snapshot.id}_${index}`,
+      chunk_index: Number.isFinite(chunk.chunk_index) ? chunk.chunk_index : index,
+      text: String(chunk.text || ''),
+      token_count: Number.isFinite(chunk.token_count)
+        ? chunk.token_count
+        : estimateTokens(chunk.text || '')
+    }));
+  }
+
+  const text = String(snapshot.text || '').trim();
+  if (!text) return [];
+
+  const words = text.split(/\s+/);
+  const chunkSize = 1200;
+  const chunkOverlap = 200;
+  const step = chunkSize - chunkOverlap;
+
+  const chunks = [];
+  let chunkIndex = 0;
+
+  for (let start = 0; start < words.length; start += step) {
+    const end = Math.min(start + chunkSize, words.length);
+    const chunkText = words.slice(start, end).join(' ').trim();
+
+    if (!chunkText) continue;
+
+    chunks.push({
+      chunk_id: `${snapshot.id}_${chunkIndex}`,
+      chunk_index: chunkIndex,
+      text: chunkText,
+      token_count: estimateTokens(chunkText)
+    });
+
+    chunkIndex += 1;
+
+    if (end >= words.length) break;
+  }
+
+  return chunks;
+}
+
+function normalizeSnapshotForExport(snapshot) {
+  const chunks = buildRagChunksForSnapshot(snapshot);
+
+  return {
+    ...snapshot,
+    text: String(snapshot.text || ''),
+    title: String(snapshot.title || 'Untitled Page'),
+    url: String(snapshot.url || ''),
+    textPreview: snapshot.textPreview || String(snapshot.text || '').substring(0, 150) + (String(snapshot.text || '').length > 150 ? '...' : ''),
+    token_count: Number.isFinite(snapshot.token_count)
+      ? snapshot.token_count
+      : estimateTokens(snapshot.text || ''),
+    chunk_count: chunks.length,
+    chunk_config: snapshot.chunk_config || {
+      chunk_size: 1200,
+      chunk_overlap: 200,
+      chunk_method: 'word_window'
+    },
+    chunks
+  };
+}
+
 /**
  * Export snapshots as single JSON file
  */
@@ -480,7 +550,7 @@ function exportSnapshotsAsJson() {
       { action: 'getSnapshots' },
       (response) => {
         try {
-          const snapshots = response.snapshots || [];
+          const snapshots = (response.snapshots || []).map(normalizeSnapshotForExport);
 
           if (snapshots.length === 0) {
             showToast('No manemarks to export', 'error');
@@ -488,10 +558,13 @@ function exportSnapshotsAsJson() {
             return;
           }
 
+          const totalRagChunks = snapshots.reduce((sum, s) => sum + (s.chunks?.length || 0), 0);
+
           const exportData = {
             export_date: new Date().toISOString(),
             total_manemarks: snapshots.length,
-            snapshots: snapshots
+            total_rag_chunks: totalRagChunks,
+            snapshots
           };
 
           const dataStr = JSON.stringify(exportData, null, 2);
@@ -526,7 +599,7 @@ function exportSnapshotsAsZipWithTokens(tokenLimitPerFile) {
       { action: 'getSnapshots' },
       async (response) => {
         try {
-          const snapshots = response.snapshots || [];
+          const snapshots = (response.snapshots || []).map(normalizeSnapshotForExport);
 
           if (snapshots.length === 0) {
             showToast('No manemarks to export', 'error');
@@ -545,12 +618,18 @@ function exportSnapshotsAsZipWithTokens(tokenLimitPerFile) {
           const zip = new JSZip();
 
           chunks.forEach((chunk, index) => {
+            const ragChunkCount = chunk.snapshots.reduce(
+              (sum, snapshot) => sum + (snapshot.chunks?.length || 0),
+              0
+            );
+
             const chunkData = {
               chunk_number: index + 1,
               total_chunks: chunks.length,
               entries_in_chunk: chunk.snapshots.length,
               estimated_tokens: chunk.totalTokens,
               token_limit: tokenLimitPerFile,
+              total_rag_chunks: ragChunkCount,
               manemarks: chunk.snapshots,
               exported_at: new Date().toISOString()
             };
@@ -560,10 +639,13 @@ function exportSnapshotsAsZipWithTokens(tokenLimitPerFile) {
           });
 
           const totalTokens = chunks.reduce((sum, chunk) => sum + chunk.totalTokens, 0);
+          const totalRagChunks = snapshots.reduce((sum, s) => sum + (s.chunks?.length || 0), 0);
+
           const metadata = {
             export_date: new Date().toISOString(),
             total_manemarks: snapshots.length,
             total_chunks: chunks.length,
+            total_rag_chunks: totalRagChunks,
             token_limit_per_file: tokenLimitPerFile,
             estimated_total_tokens: totalTokens,
             description: 'Text Snapper Export - Token-aware chunked JSON files for RAG compatibility'
@@ -591,7 +673,6 @@ function exportSnapshotsAsZipWithTokens(tokenLimitPerFile) {
     );
   });
 }
-
 /**
  * Create token-aware chunks from snapshots
  * Respects token limit per file
