@@ -1,4 +1,10 @@
 
+<div align="center">
+
+[![Install Manemark](https://img.shields.io/badge/Chrome-Install%20Manemark-4285F4?logo=googlechrome&logoColor=white)](https://chromewebstore.google.com/detail/manemark/pcfdjiimfmmmlilbjikhboncpncpkkho)
+
+</div>
+
 <p align="center">
   <img width="460" height="300" src="https://github.com/user-attachments/assets/2fb070bd-b9bf-4861-89bf-cfc0b842d0b2">
 </p>
