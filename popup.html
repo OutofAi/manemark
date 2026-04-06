@@ -70,6 +70,11 @@
       align-items: center;
       flex-wrap: wrap;
       margin-left: auto;
+      visibility: hidden;
+    }
+
+    .controls.ready {
+      visibility: visible;
     }
 
     .export-controls {
@@ -98,6 +103,11 @@
       display: inline-flex;
       align-items: center;
       gap: 8px;
+      visibility: hidden;
+    }
+
+    .btn-snap.ready {
+      visibility: visible;
     }
 
     .btn-snap:hover {
@@ -181,6 +191,12 @@
       padding: 12px;
       margin-bottom: 12px;
       transition: all 0.2s ease;
+    }
+
+    .snapshot-item-active {
+      border-color: #F27C21;
+      box-shadow: 0 0 0 2px rgba(242, 124, 33, 0.18);
+      background: #fff7f1;
     }
 
     .snapshot-item:hover {

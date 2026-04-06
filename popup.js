@@ -19,6 +19,17 @@ const snapText = document.getElementById('snapText');
 let currentTab = null;
 let currentSnapshot = null;
 
+function normalizeUrl(url) {
+  try {
+    const u = new URL(url);
+    u.hash = ''; // ignore #section differences
+    return u.toString().replace(/\/$/, ''); // ignore trailing slash differences
+  } catch {
+    return (url || '').replace(/#.*$/, '').replace(/\/$/, '');
+  }
+}
+
+
 function getActiveTab() {
   return new Promise((resolve) => {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
@@ -35,19 +46,57 @@ function getSnapshots() {
   });
 }
 
+
 async function refreshCurrentPageState() {
   currentTab = await getActiveTab();
 
   if (!currentTab?.url) {
     currentSnapshot = null;
     setSnapButtonState(false);
+    revealSnapButton();
+    document.querySelector('.controls')?.classList.add('ready');
     return;
   }
 
   const snapshots = await getSnapshots();
-  currentSnapshot = snapshots.find(s => s.url === currentTab.url) || null;
+  const activeUrl = normalizeUrl(currentTab.url);
+
+  currentSnapshot =
+    snapshots.find(s => normalizeUrl(s.url) === activeUrl) || null;
 
   setSnapButtonState(Boolean(currentSnapshot));
+  renderSnapshots(snapshots);
+
+  if (currentSnapshot) {
+    const activeItem = snapshotsList.querySelector(
+      `[data-snapshot-id="${currentSnapshot.id}"]`
+    );
+
+    if (activeItem) {
+      const scroller = document.querySelector('.content');
+
+      if (scroller) {
+        const itemTop = activeItem.offsetTop;
+        const itemBottom = itemTop + activeItem.offsetHeight;
+        const viewTop = scroller.scrollTop;
+        const viewBottom = viewTop + scroller.clientHeight;
+
+        if (itemTop < viewTop || itemBottom > viewBottom) {
+          const targetScrollTop =
+            itemTop - (scroller.clientHeight / 2) + (activeItem.offsetHeight / 2);
+
+          scroller.scrollTop = Math.max(0, targetScrollTop);
+        }
+      }
+    }
+  }
+
+  revealSnapButton();
+  document.querySelector('.controls')?.classList.add('ready');
+}
+
+function revealSnapButton() {
+  snapBtn.classList.add('ready');
 }
 
 function setSnapButtonState(isSaved) {
@@ -348,23 +397,32 @@ function loadSnapshots() {
  * Render snapshots in the UI
  */
 function renderSnapshots(snapshots) {
+  const activeUrl = normalizeUrl(currentTab?.url || '');
+
   snapshotsList.innerHTML = snapshots
-    .map(snapshot => `
-      <div class="snapshot-item">
-        <div class="snapshot-header">
-          <div class="snapshot-title">${escapeHtml(snapshot.title)}</div>
-          <div class="snapshot-time">${formatTime(snapshot.timestamp)}</div>
+    .map(snapshot => {
+      const isActive = normalizeUrl(snapshot.url) === activeUrl;
+
+      return `
+        <div
+          class="snapshot-item ${isActive ? 'snapshot-item-active' : ''}"
+          data-snapshot-id="${snapshot.id}"
+        >
+          <div class="snapshot-header">
+            <div class="snapshot-title">${escapeHtml(snapshot.title)}</div>
+            <div class="snapshot-time">${formatTime(snapshot.timestamp)}</div>
+          </div>
+          <a href="${escapeHtml(snapshot.url)}" target="_blank" class="snapshot-url" title="${escapeHtml(snapshot.url)}">
+            ${escapeHtml(snapshot.url.substring(0, 60))}${snapshot.url.length > 60 ? '...' : ''}
+          </a>
+          <div class="snapshot-preview">${escapeHtml(snapshot.textPreview)}</div>
+          <div class="snapshot-actions">
+            <button class="btn-small btn-copy" data-id="${snapshot.id}"><img src="assets/copy.svg" alt="" class="btn-icon-item"></button>
+            <button class="btn-small btn-delete" data-id="${snapshot.id}"><img src="assets/bin.svg" alt="" class="btn-icon-item"></button>
+          </div>
         </div>
-        <a href="${escapeHtml(snapshot.url)}" target="_blank" class="snapshot-url" title="${escapeHtml(snapshot.url)}">
-          ${escapeHtml(snapshot.url.substring(0, 60))}${snapshot.url.length > 60 ? '...' : ''}
-        </a>
-        <div class="snapshot-preview">${escapeHtml(snapshot.textPreview)}</div>
-        <div class="snapshot-actions">
-          <button class="btn-small btn-copy" data-id="${snapshot.id}"><img src="assets/copy.svg" alt="" class="btn-icon-item"></button>
-          <button class="btn-small btn-delete" data-id="${snapshot.id}"><img src="assets/bin.svg" alt="" class="btn-icon-item"></button>
-        </div>
-      </div>
-    `)
+      `;
+    })
     .join('');
 }
 
