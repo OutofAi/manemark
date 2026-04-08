@@ -316,15 +316,21 @@
     }
 
     .btn-copy,
-    .btn-delete,
+    .btn-delete {
+      background: transparent;
+      color: #6b7280;
+    }
+
     .dropdown-toggle {
       background: transparent;
       color: white;
     }
+    
 
-    .btn-delete {
-      background: rgba(255, 255, 255, 0);
-      color: #ffffffb6;
+    .btn-icon-item {
+      width: 16px;
+      height: 16px;
+      display: block;
     }
 
     .btn-delete:hover {
@@ -350,6 +356,7 @@
       font-weight: 600;
       display: inline-flex;
       padding: 10px 12px;
+      color: white;
     }
 
     .toast {
@@ -563,6 +570,17 @@
 
     /* Dark theme */
     @media (prefers-color-scheme: dark) {
+
+      .btn-copy,
+      .btn-delete {
+        color: #ffffff;
+      }
+
+      .btn-copy:hover,
+      .btn-delete:hover {
+        color: #ffffff;
+      }
+
       body {
         background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
         color: #e5e7eb;
