@@ -36,7 +36,7 @@
       display: flex;
       justify-content: space-between;
       align-items: center;
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+
       flex-shrink: 0;      /* important: header stays fixed height */
       position: sticky;    /* optional but good */
       top: 0;
@@ -196,14 +196,14 @@
 
     .snapshot-item-active {
       border-color: #F27C21;
-      box-shadow: 0 0 0 2px rgba(242, 124, 33, 0.18);
+
       background: #fff7f1;
     }
 
     .snapshot-item:hover {
       background: #f27c213b;
       border-color: #d1d5db;
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+
     }
 
     .snapshot-header {
@@ -274,7 +274,7 @@
         background: white;
         border: 1px solid #e5e7eb;
         border-radius: 8px;
-        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+
         min-width: 120px;
         overflow: hidden;
         z-index: 100;
@@ -345,6 +345,7 @@
       padding: 4px 20px;
       background: #72278f;
       flex-shrink: 0;
+
     }
 
     .top-action-btn {
@@ -368,7 +369,7 @@
       padding: 12px 16px;
       border-radius: 6px;
       font-size: 13px;
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+
       animation: slideIn 0.3s ease;
       z-index: 1000;
     }
@@ -463,7 +464,7 @@
     .token-limit-control input:focus {
       outline: none;
       border-color: #667eea;
-      box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.1);
+
     }
 
     .modal-overlay {
@@ -488,7 +489,7 @@
       border-radius: 8px;
       padding: 24px;
       max-width: 400px;
-      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+
     }
 
     .modal-content h2 {
@@ -515,7 +516,7 @@
     .modal-content input:focus {
       outline: none;
       border-color: #667eea;
-      box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.1);
+
     }
 
     .modal-buttons {
@@ -568,7 +569,6 @@
       background: #9ca3af;
     }
 
-    /* Dark theme */
     @media (prefers-color-scheme: dark) {
 
       .btn-copy,
@@ -579,53 +579,38 @@
       .btn-copy:hover,
       .btn-delete:hover {
         color: #ffffff;
-      }
-
-      body {
-        background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
-        color: #e5e7eb;
+      }      body {
+        background: #111111;
+        color: #e5e5e5;
       }
 
       .container {
-        background: #0f172a;
+        background: #171717;
       }
 
       .header {
-        background: #5a2d82;
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+        background: #2b2b2b;
+
       }
 
-      .header h1 {
-        color: #e9d5ff;
-      }
-
-      .empty-state {
-        color: #9ca3af;
-      }
-
-      .empty-state h1 {
-        color: #e5e7eb;
-      }
-
-      .empty-state small {
-        color: #6b7280;
+      .top-actions {
+        background: #1d1d1d;
       }
 
       .snapshot-item {
-        background: #1e293b;
-        border-color: #334155;
+        background: #1c1c1c;
+        border-color: #2f2f2f;
       }
 
       .snapshot-item-active {
         border-color: #f97316;
-        box-shadow: 0 0 0 2px rgba(249, 115, 22, 0.2);
+
         background: #1e1a0f;
       }
 
       .snapshot-item:hover {
-        background: #334155;
-        border-color: #475569;
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+        background: #252525;
+        border-color: #3a3a3a;
       }
 
       .snapshot-title {
@@ -647,128 +632,36 @@
       }
 
       .dropdown-menu {
-        background: #1e293b;
-        border-color: #334155;
-        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
-      }
-
-      .dropdown-item {
-        background: #5a2d82;
-        color: #e9d5ff;
-      }
-
-      .dropdown-item:hover {
-        background: #7c3aed;
-      }
-
-      .top-actions {
-        background: #5a2d82;
-      }
-
-      .btn-secondary {
-        background: #334155;
-        color: #e5e7eb;
-      }
-
-      .btn-secondary:hover {
-        background: #475569;
+        background: #1c1c1c;
+        border-color: #2f2f2f;
       }
 
       .stats {
-        background: #1e293b;
-        color: #9ca3af;
-      }
-
-      .storage-info {
-        background: #1e293b;
-        border-color: #334155;
-        color: #cbd5e1;
-      }
-
-      .btn-open-storage {
-        background: #3b82f6;
-      }
-
-      .btn-open-storage:hover {
-        background: #2563eb;
-      }
-
-      .token-limit-control {
-        background: #1e293b;
-        border-color: #334155;
-      }
-
-      .token-limit-control label {
-        color: #cbd5e1;
-      }
-
-      .token-limit-control input {
-        background: #0f172a;
-        border-color: #334155;
-        color: #e5e7eb;
-      }
-
-      .token-limit-control input:focus {
-        border-color: #667eea;
-        box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.2);
-      }
-
-      .modal-overlay {
-        background: rgba(0, 0, 0, 0.7);
+        background: #1c1c1c;
+        color: #a3a3a3;
       }
 
       .modal-content {
-        background: #1e293b;
-        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+        background: #1c1c1c;
       }
 
-      .modal-content h2 {
-        color: #e5e7eb;
-      }
-
-      .modal-content p {
-        color: #cbd5e1;
-      }
-
+      .token-limit-control input,
       .modal-content input {
-        background: #0f172a;
-        border-color: #334155;
-        color: #e5e7eb;
-      }
-
-      .modal-content input:focus {
-        border-color: #667eea;
-        box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.2);
-      }
-
-      .modal-buttons .btn-cancel {
-        background: #334155;
-        color: #e5e7eb;
-      }
-
-      .modal-buttons .btn-cancel:hover {
-        background: #475569;
-      }
-
-      .modal-buttons .btn-confirm {
-        background: #667eea;
-        color: white;
-      }
-
-      .modal-buttons .btn-confirm:hover {
-        background: #5a67d8;
+        background: #111111;
+        border-color: #2f2f2f;
+        color: #e5e5e5;
       }
 
       ::-webkit-scrollbar-track {
-        background: #0f172a;
+        background: #111111;
       }
 
       ::-webkit-scrollbar-thumb {
-        background: #475569;
+        background: #3f3f46;
       }
 
       ::-webkit-scrollbar-thumb:hover {
-        background: #64748b;
+        background: #52525b;
       }
     }
   </style>
