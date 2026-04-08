@@ -443,12 +443,15 @@ function renderSnapshots(snapshots) {
  */
 function renderStats(snapshots) {
   const totalSnapshots = snapshots.length;
-  const totalCharacters = snapshots.reduce((sum, s) => sum + s.text.length, 0);
+  const totalTokens = snapshots.reduce(
+    (sum, snapshot) => sum + calculateSnapshotTokens(snapshot),
+    0
+  );
 
   statsContainer.innerHTML = `
     <div class="stats">
       <strong>${totalSnapshots}</strong> manemark${totalSnapshots !== 1 ? 's' : ''} • 
-      <strong>${formatBytes(totalCharacters)}</strong> of text
+      <strong>${totalTokens.toLocaleString()}</strong> total tokens
     </div>
   `;
 }
