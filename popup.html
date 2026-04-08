@@ -11,6 +11,7 @@
       box-sizing: border-box;
     }
 
+    /* Light theme (default) */
     body {
       width: 400px;
       height: 600px;       /* use height instead of max-height */
@@ -498,7 +499,6 @@
 
     .modal-content input {
       width: 100%;
-      padding: 8px 12px;
       border: 1px solid #d1d5db;
       border-radius: 6px;
       font-size: 13px;
@@ -559,6 +559,199 @@
 
     ::-webkit-scrollbar-thumb:hover {
       background: #9ca3af;
+    }
+
+    /* Dark theme */
+    @media (prefers-color-scheme: dark) {
+      body {
+        background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+        color: #e5e7eb;
+      }
+
+      .container {
+        background: #0f172a;
+      }
+
+      .header {
+        background: #5a2d82;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+      }
+
+      .header h1 {
+        color: #e9d5ff;
+      }
+
+      .empty-state {
+        color: #9ca3af;
+      }
+
+      .empty-state h1 {
+        color: #e5e7eb;
+      }
+
+      .empty-state small {
+        color: #6b7280;
+      }
+
+      .snapshot-item {
+        background: #1e293b;
+        border-color: #334155;
+      }
+
+      .snapshot-item-active {
+        border-color: #f97316;
+        box-shadow: 0 0 0 2px rgba(249, 115, 22, 0.2);
+        background: #1e1a0f;
+      }
+
+      .snapshot-item:hover {
+        background: #334155;
+        border-color: #475569;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+      }
+
+      .snapshot-title {
+        color: #e5e7eb;
+      }
+
+      .snapshot-time {
+        color: #9ca3af;
+      }
+
+      .snapshot-url {
+        color: #93c5fd;
+      }
+
+      .snapshot-preview {
+        color: #cbd5e1;
+        background: rgba(30, 41, 59, 0.5);
+        border-left-color: #f97316;
+      }
+
+      .dropdown-menu {
+        background: #1e293b;
+        border-color: #334155;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+      }
+
+      .dropdown-item {
+        background: #5a2d82;
+        color: #e9d5ff;
+      }
+
+      .dropdown-item:hover {
+        background: #7c3aed;
+      }
+
+      .top-actions {
+        background: #5a2d82;
+      }
+
+      .btn-secondary {
+        background: #334155;
+        color: #e5e7eb;
+      }
+
+      .btn-secondary:hover {
+        background: #475569;
+      }
+
+      .stats {
+        background: #1e293b;
+        color: #9ca3af;
+      }
+
+      .storage-info {
+        background: #1e293b;
+        border-color: #334155;
+        color: #cbd5e1;
+      }
+
+      .btn-open-storage {
+        background: #3b82f6;
+      }
+
+      .btn-open-storage:hover {
+        background: #2563eb;
+      }
+
+      .token-limit-control {
+        background: #1e293b;
+        border-color: #334155;
+      }
+
+      .token-limit-control label {
+        color: #cbd5e1;
+      }
+
+      .token-limit-control input {
+        background: #0f172a;
+        border-color: #334155;
+        color: #e5e7eb;
+      }
+
+      .token-limit-control input:focus {
+        border-color: #667eea;
+        box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.2);
+      }
+
+      .modal-overlay {
+        background: rgba(0, 0, 0, 0.7);
+      }
+
+      .modal-content {
+        background: #1e293b;
+        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+      }
+
+      .modal-content h2 {
+        color: #e5e7eb;
+      }
+
+      .modal-content p {
+        color: #cbd5e1;
+      }
+
+      .modal-content input {
+        background: #0f172a;
+        border-color: #334155;
+        color: #e5e7eb;
+      }
+
+      .modal-content input:focus {
+        border-color: #667eea;
+        box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.2);
+      }
+
+      .modal-buttons .btn-cancel {
+        background: #334155;
+        color: #e5e7eb;
+      }
+
+      .modal-buttons .btn-cancel:hover {
+        background: #475569;
+      }
+
+      .modal-buttons .btn-confirm {
+        background: #667eea;
+        color: white;
+      }
+
+      .modal-buttons .btn-confirm:hover {
+        background: #5a67d8;
+      }
+
+      ::-webkit-scrollbar-track {
+        background: #0f172a;
+      }
+
+      ::-webkit-scrollbar-thumb {
+        background: #475569;
+      }
+
+      ::-webkit-scrollbar-thumb:hover {
+        background: #64748b;
+      }
     }
   </style>
 </head>
