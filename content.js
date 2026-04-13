@@ -43,6 +43,25 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     }
     return true; // Will respond asynchronously
   }
+
+  if (request.action === 'copyPageText') {
+    try {
+      waitForDOM(() => {
+        const text = extractPageText();
+
+        if (!text || text.trim().length === 0) {
+          sendResponse({ success: false, message: 'No text content found on this page' });
+          return;
+        }
+
+        sendResponse({ success: true, text });
+      });
+    } catch (error) {
+      console.error('Error copying page text:', error);
+      sendResponse({ success: false, message: error.message });
+    }
+    return true;
+  }
 });
 
 /**

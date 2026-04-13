@@ -47,6 +47,7 @@
       /* optional but good */
       top: 0;
       z-index: 10;
+      border-bottom: #b6b6b67a 1px solid;
     }
 
     .content {
@@ -113,7 +114,7 @@
       gap: 8px;
       visibility: hidden;
     }
-    
+
     .btn-snap:hover {
       background: #DB3F78;
     }
@@ -366,7 +367,7 @@
       font-size: 14px;
       font-weight: 600;
       display: inline-flex;
-      
+
       color: white;
     }
 
@@ -588,13 +589,13 @@
       }
 
 
-    .btn-snap {
-      background: #A55417;
-    }
-    
-    .btn-snap:hover {
-      background: #793f12;
-    }
+      .btn-snap {
+        background: #A55417;
+      }
+
+      .btn-snap:hover {
+        background: #793f12;
+      }
 
       .btn-copy:hover,
       .btn-delete:hover {
@@ -701,11 +702,25 @@
         <img src="assets/sleepy_mane.png" alt="mane" class="header-icon" id="popIcon" />
       </h1>
       <div class="controls">
+
+        <button class="btn-small btn-copy top-action-btn" id="copyPageBtn" aria-label="Copy current page"
+          title="Copy current page">
+          <svg width="32px" height="32px" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path
+              d="M9 9.75C9 8.50736 10.0074 7.5 11.25 7.5H16.5C17.7426 7.5 18.75 8.50736 18.75 9.75V15C18.75 16.2426 17.7426 17.25 16.5 17.25H11.25C10.0074 17.25 9 16.2426 9 15V9.75Z"
+              stroke="#ffffff" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" />
+            <path
+              d="M6.75 14.25H6C4.75736 14.25 3.75 13.2426 3.75 12V6.75C3.75 5.50736 4.75736 4.5 6 4.5H11.25C12.4926 4.5 13.5 5.50736 13.5 6.75V7.5"
+              stroke="#ffffff" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+        </button>
+
         <button class="btn-snap" id="snapBtn">
           <span id="snapText">Manemark</span>
           <img src="assets/bookmark.svg" alt="" class="btn-icon">
-          
+
         </button>
+
       </div>
     </div>
 
@@ -727,7 +742,6 @@
           <button class="dropdown-item" id="exportZipBtn">ZIP</button>
         </div>
       </div>
-
 
       <button class="btn-small btn-copy top-action-btn" id="importBtn"><svg width="24px" height="24px"
           viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">

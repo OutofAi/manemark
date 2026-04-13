@@ -9,6 +9,7 @@ const exportZipBtn = document.getElementById('exportZipBtn');
 const exportJsonBtn = document.getElementById('exportJsonBtn');
 const importBtn = document.getElementById('importBtn');
 const clearAllBtn = document.getElementById('clearAllBtn');
+const copyPageBtn = document.getElementById('copyPageBtn');
 
 const importFile = document.getElementById('importFile');
 const snapshotsList = document.getElementById('snapshotsList');
@@ -149,6 +150,7 @@ exportJsonBtn.addEventListener('click', () => {
 });
 importBtn.addEventListener('click', () => importFile.click());
 clearAllBtn.addEventListener('click', clearAllSnapshots);
+copyPageBtn.addEventListener('click', copyCurrentPageText);
 importFile.addEventListener('change', handleImport);
 
 // Event delegation for dynamic item buttons only
@@ -363,6 +365,59 @@ function captureCurrentPageText() {
               refreshCurrentPageState();
             } else {
               showToast('✗ Failed to capture text', 'error');
+            }
+          }
+        );
+      }
+    );
+  });
+}
+
+function copyCurrentPageText() {
+  copyPageBtn.disabled = true;
+
+  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+    const tab = tabs[0];
+    if (!tab || !tab.id) {
+      copyPageBtn.disabled = false;
+      showToast('✗ No active tab found', 'error');
+      return;
+    }
+
+    chrome.scripting.executeScript(
+      {
+        target: { tabId: tab.id },
+        files: ['content.js']
+      },
+      () => {
+        if (chrome.runtime.lastError) {
+          copyPageBtn.disabled = false;
+          showToast(`✗ ${chrome.runtime.lastError.message}`, 'error');
+          return;
+        }
+
+        chrome.tabs.sendMessage(
+          tab.id,
+          { action: 'copyPageText' },
+          (response) => {
+            copyPageBtn.disabled = false;
+
+            if (chrome.runtime.lastError) {
+              showToast(`✗ ${chrome.runtime.lastError.message}`, 'error');
+              return;
+            }
+
+            if (response && response.success && response.text) {
+              navigator.clipboard.writeText(response.text)
+                .then(() => {
+                  showToast('✓ Page text copied to clipboard!');
+                })
+                .catch((err) => {
+                  console.error('Clipboard write failed:', err);
+                  showToast('✗ Failed to copy page text', 'error');
+                });
+            } else {
+              showToast(response?.message || '✗ Failed to copy page text', 'error');
             }
           }
         );
