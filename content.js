@@ -8,7 +8,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       // Wait for DOM to be ready, then extract text
       waitForDOM(() => {
         // Extract all visible text from the page
-        const text = extractPageText();
+        const { text, blocks } = extractPageText();
         
         // Get page URL and title
         const url = window.location.href;
@@ -25,6 +25,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           {
             action: 'saveSnapshot',
             text: text,
+            blocks: blocks,
             url: url,
             title: title
           },
@@ -47,7 +48,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'copyPageText') {
     try {
       waitForDOM(() => {
-        const text = extractPageText();
+        const { text } = extractPageText();
 
         if (!text || text.trim().length === 0) {
           sendResponse({ success: false, message: 'No text content found on this page' });
@@ -128,107 +129,142 @@ function extractPageText() {
 
     clone.querySelectorAll('[aria-hidden="true"]').forEach(el => el.remove());
 
-    const lines = [];
-    walkElement(clone, lines);
+    const blocks = [];
+    walkElement(clone, blocks, []);
 
-    const text = lines
-      .map(line => line.trim())
+    const text = blocks
+      .map(formatBlockText)
       .filter(line => line.length > 0)
-      .join('\n')
+      .join('\n\n')
       .replace(/\n{3,}/g, '\n\n');
 
     if (text && text.trim().length > 0) {
-      return text;
+      return { text, blocks };
     }
 
     // Fallback: use the live document if the semantic root yields nothing
-    return document.body.innerText || document.body.textContent || '';
+    return {
+      text: document.body.innerText || document.body.textContent || '',
+      blocks: []
+    };
   } catch (error) {
     console.error('Error in extractPageText:', error);
     try {
-      return document.body.innerText || document.body.textContent || '';
+      return {
+        text: document.body.innerText || document.body.textContent || '',
+        blocks: []
+      };
     } catch (e) {
-      return '';
+      return { text: '', blocks: [] };
     }
   }
 }
 
-function walkElement(node, lines) {
-  if (!node || node.nodeType !== Node.ELEMENT_NODE) {
-    if (node && node.nodeType === Node.TEXT_NODE) {
-      const text = node.textContent.replace(/\s+/g, ' ').trim();
-      if (text) {
-        lines.push(text);
-      }
+function formatBlockText(block) {
+  if (block.type === 'li') {
+    return `- ${block.text}`;
+  }
+  if (block.type === 'table') {
+    return block.text;
+  }
+  return block.text;
+}
+
+function walkElement(node, blocks, headingPath) {
+  if (!node) {
+    return headingPath;
+  }
+
+  if (node.nodeType === Node.TEXT_NODE) {
+    const text = normalizeText(node.textContent);
+    if (text) {
+      blocks.push({ type: 'p', text, headingPath: [...headingPath] });
     }
-    return;
+    return headingPath;
+  }
+
+  if (node.nodeType !== Node.ELEMENT_NODE) {
+    return headingPath;
   }
 
   if (node.hidden || node.getAttribute('aria-hidden') === 'true') {
-    return;
+    return headingPath;
   }
 
   const tagName = node.tagName.toUpperCase();
 
   if (['SCRIPT', 'STYLE', 'NOSCRIPT', 'META', 'LINK', 'SVG', 'IFRAME'].includes(tagName)) {
-    return;
+    return headingPath;
   }
 
   if (['H1', 'H2', 'H3', 'H4', 'H5', 'H6'].includes(tagName)) {
-    const text = node.innerText.trim();
+    const text = getElementText(node);
     if (text) {
-      lines.push(text, '');
+      const level = Number(tagName.slice(1));
+      const newHeadingPath = headingPath.slice(0, level - 1);
+      newHeadingPath.push(text);
+      blocks.push({ type: tagName.toLowerCase(), text, headingPath: [...newHeadingPath] });
+      return newHeadingPath;
     }
-    return;
+    return headingPath;
   }
 
   if (tagName === 'P') {
-    const text = node.innerText.trim();
+    const text = getElementText(node);
     if (text) {
-      lines.push(text, '');
+      blocks.push({ type: 'p', text, headingPath: [...headingPath] });
     }
-    return;
+    return headingPath;
   }
 
   if (tagName === 'LI') {
-    const text = node.innerText.trim();
+    const text = getElementText(node);
     if (text) {
-      lines.push(`- ${text}`);
+      blocks.push({ type: 'li', text, headingPath: [...headingPath] });
     }
-    return;
+    return headingPath;
   }
 
-  if (tagName === 'PRE' || tagName === 'CODE') {
-    const text = node.innerText.trim();
+  if (tagName === 'PRE') {
+    const text = getElementText(node);
     if (text) {
-      lines.push(text, '');
+      blocks.push({ type: 'pre', text, headingPath: [...headingPath] });
     }
-    return;
+    return headingPath;
+  }
+
+  if (tagName === 'CODE' && !node.closest('pre')) {
+    const text = getElementText(node);
+    if (text) {
+      blocks.push({ type: 'code', text, headingPath: [...headingPath] });
+    }
+    return headingPath;
   }
 
   if (tagName === 'TABLE') {
-    const tableRows = Array.from(node.querySelectorAll('tr')).map(row => {
-      const cells = Array.from(row.querySelectorAll('th, td')).map(cell => cell.innerText.trim()).filter(Boolean);
+    const rows = Array.from(node.querySelectorAll('tr')).map(row => {
+      const cells = Array.from(row.querySelectorAll('th, td')).map(cell => getElementText(cell)).filter(Boolean);
       return cells.join('\t');
     }).filter(Boolean);
 
-    if (tableRows.length > 0) {
-      lines.push(...tableRows, '');
+    if (rows.length > 0) {
+      blocks.push({ type: 'table', text: rows.join('\n'), headingPath: [...headingPath] });
     }
-    return;
+    return headingPath;
   }
 
-  if (tagName === 'BR') {
-    lines.push('');
-    return;
-  }
+  let currentHeadingPath = headingPath;
+  Array.from(node.childNodes).forEach(child => {
+    currentHeadingPath = walkElement(child, blocks, currentHeadingPath);
+  });
 
-  const childNodes = Array.from(node.childNodes);
-  childNodes.forEach(child => walkElement(child, lines));
+  return currentHeadingPath;
+}
 
-  if (['DIV', 'SECTION', 'ARTICLE', 'MAIN', 'ASIDE', 'NAV', 'HEADER', 'FOOTER'].includes(tagName)) {
-    if (lines.length > 0 && lines[lines.length - 1].trim() !== '') {
-      lines.push('');
-    }
-  }
+function normalizeText(text) {
+  return text ? text.replace(/\s+/g, ' ').trim() : '';
+}
+
+function getElementText(element) {
+  return normalizeText(element.innerText || element.textContent || '');
 }
