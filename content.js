@@ -88,16 +88,9 @@ function waitForDOM(callback) {
  */
 function extractPageText() {
   try {
-    // First try using the live document body for better results with SPAs
-    let text = '';
-    
-    // Get text from body
-    const bodyElement = document.body || document.documentElement;
-    
-    // Create a clone to avoid modifying the original
-    const clone = bodyElement.cloneNode(true);
-    
-    // Remove unwanted elements
+    const rootElement = document.querySelector('main, article, [role="main"]') || document.body || document.documentElement;
+    const clone = rootElement.cloneNode(true);
+
     const unwantedSelectors = [
       'script',
       'style',
@@ -106,12 +99,25 @@ function extractPageText() {
       'link',
       'svg',
       'iframe',
+      'nav',
+      'header',
+      'footer',
+      'aside',
+      '[role="navigation"]',
+      '[role="complementary"]',
+      '.sidebar',
+      '.toc',
+      '.menu',
+      '.breadcrumbs',
+      '.cookie',
+      '.banner',
+      '.advertisement',
       '[style*="display:none"]',
       '[style*="display: none"]',
       '.hidden',
       '[hidden]'
     ];
-    
+
     unwantedSelectors.forEach(selector => {
       try {
         clone.querySelectorAll(selector).forEach(el => el.remove());
@@ -119,34 +125,110 @@ function extractPageText() {
         // Ignore invalid selectors
       }
     });
-    
-    // Get text content - prefer innerText for better whitespace handling
-    if (clone.innerText) {
-      text = clone.innerText;
-    } else if (clone.textContent) {
-      text = clone.textContent;
-    }
-    
-    // If we still don't have text, try getting it from the live document
-    if (!text || text.trim().length === 0) {
-      text = document.body.innerText || document.body.textContent || '';
-    }
-    
-    // Clean up whitespace
-    text = text
-      .split('\n')
+
+    clone.querySelectorAll('[aria-hidden="true"]').forEach(el => el.remove());
+
+    const lines = [];
+    walkElement(clone, lines);
+
+    const text = lines
       .map(line => line.trim())
       .filter(line => line.length > 0)
-      .join('\n');
-    
-    return text;
+      .join('\n')
+      .replace(/\n{3,}/g, '\n\n');
+
+    if (text && text.trim().length > 0) {
+      return text;
+    }
+
+    // Fallback: use the live document if the semantic root yields nothing
+    return document.body.innerText || document.body.textContent || '';
   } catch (error) {
     console.error('Error in extractPageText:', error);
-    // Fallback: try to get text directly from document
     try {
       return document.body.innerText || document.body.textContent || '';
     } catch (e) {
       return '';
+    }
+  }
+}
+
+function walkElement(node, lines) {
+  if (!node || node.nodeType !== Node.ELEMENT_NODE) {
+    if (node && node.nodeType === Node.TEXT_NODE) {
+      const text = node.textContent.replace(/\s+/g, ' ').trim();
+      if (text) {
+        lines.push(text);
+      }
+    }
+    return;
+  }
+
+  if (node.hidden || node.getAttribute('aria-hidden') === 'true') {
+    return;
+  }
+
+  const tagName = node.tagName.toUpperCase();
+
+  if (['SCRIPT', 'STYLE', 'NOSCRIPT', 'META', 'LINK', 'SVG', 'IFRAME'].includes(tagName)) {
+    return;
+  }
+
+  if (['H1', 'H2', 'H3', 'H4', 'H5', 'H6'].includes(tagName)) {
+    const text = node.innerText.trim();
+    if (text) {
+      lines.push(text, '');
+    }
+    return;
+  }
+
+  if (tagName === 'P') {
+    const text = node.innerText.trim();
+    if (text) {
+      lines.push(text, '');
+    }
+    return;
+  }
+
+  if (tagName === 'LI') {
+    const text = node.innerText.trim();
+    if (text) {
+      lines.push(`- ${text}`);
+    }
+    return;
+  }
+
+  if (tagName === 'PRE' || tagName === 'CODE') {
+    const text = node.innerText.trim();
+    if (text) {
+      lines.push(text, '');
+    }
+    return;
+  }
+
+  if (tagName === 'TABLE') {
+    const tableRows = Array.from(node.querySelectorAll('tr')).map(row => {
+      const cells = Array.from(row.querySelectorAll('th, td')).map(cell => cell.innerText.trim()).filter(Boolean);
+      return cells.join('\t');
+    }).filter(Boolean);
+
+    if (tableRows.length > 0) {
+      lines.push(...tableRows, '');
+    }
+    return;
+  }
+
+  if (tagName === 'BR') {
+    lines.push('');
+    return;
+  }
+
+  const childNodes = Array.from(node.childNodes);
+  childNodes.forEach(child => walkElement(child, lines));
+
+  if (['DIV', 'SECTION', 'ARTICLE', 'MAIN', 'ASIDE', 'NAV', 'HEADER', 'FOOTER'].includes(tagName)) {
+    if (lines.length > 0 && lines[lines.length - 1].trim() !== '') {
+      lines.push('');
     }
   }
 }
