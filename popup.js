@@ -66,6 +66,7 @@ async function refreshCurrentPageState() {
     snapshots.find(s => normalizeUrl(s.url) === activeUrl) || null;
 
   setSnapButtonState(Boolean(currentSnapshot));
+  updateExportMenuState(snapshots.length > 0);
   renderSnapshots(snapshots);
 
   if (currentSnapshot) {
@@ -113,6 +114,16 @@ function setSnapButtonState(isSaved) {
     icon.src = 'assets/bookmark.svg';
     snapText.textContent = 'Manemark';
     snapBtn.dataset.state = 'unsaved';
+  }
+}
+
+function updateExportMenuState(isEnabled) {
+  exportMenuBtn.disabled = !isEnabled;
+  if (!isEnabled) {
+    exportMenu.classList.remove('show');
+    exportMenuBtn.setAttribute('aria-disabled', 'true');
+  } else {
+    exportMenuBtn.removeAttribute('aria-disabled');
   }
 }
 
@@ -444,6 +455,8 @@ function loadSnapshots() {
         renderSnapshots(snapshots);
         renderStats(snapshots);
       }
+
+      updateExportMenuState(snapshots.length > 0);
     }
   );
 }
