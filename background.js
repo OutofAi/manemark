@@ -11,7 +11,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         url: request.url,
         title: request.title,
         text: request.text,
-        blocks: request.blocks || [],
         timestamp: new Date().toISOString(),
         textPreview: request.text.substring(0, 150) + (request.text.length > 150 ? '...' : '')
       };

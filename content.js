@@ -8,7 +8,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       // Wait for DOM to be ready, then extract text
       waitForDOM(() => {
         // Extract all visible text from the page
-        const { text, blocks } = extractPageText();
+        const text = extractPageText();
         
         // Get page URL and title
         const url = window.location.href;
@@ -25,7 +25,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           {
             action: 'saveSnapshot',
             text: text,
-            blocks: blocks,
             url: url,
             title: title
           },
@@ -48,7 +47,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'copyPageText') {
     try {
       waitForDOM(() => {
-        const { text } = extractPageText();
+        const text = extractPageText();
 
         if (!text || text.trim().length === 0) {
           sendResponse({ success: false, message: 'No text content found on this page' });
@@ -89,9 +88,16 @@ function waitForDOM(callback) {
  */
 function extractPageText() {
   try {
-    const rootElement = document.querySelector('main, article, [role="main"]') || document.body || document.documentElement;
-    const clone = rootElement.cloneNode(true);
-
+    // First try using the live document body for better results with SPAs
+    let text = '';
+    
+    // Get text from body
+    const bodyElement = document.body || document.documentElement;
+    
+    // Create a clone to avoid modifying the original
+    const clone = bodyElement.cloneNode(true);
+    
+    // Remove unwanted elements
     const unwantedSelectors = [
       'script',
       'style',
@@ -100,25 +106,12 @@ function extractPageText() {
       'link',
       'svg',
       'iframe',
-      'nav',
-      'header',
-      'footer',
-      'aside',
-      '[role="navigation"]',
-      '[role="complementary"]',
-      '.sidebar',
-      '.toc',
-      '.menu',
-      '.breadcrumbs',
-      '.cookie',
-      '.banner',
-      '.advertisement',
       '[style*="display:none"]',
       '[style*="display: none"]',
       '.hidden',
       '[hidden]'
     ];
-
+    
     unwantedSelectors.forEach(selector => {
       try {
         clone.querySelectorAll(selector).forEach(el => el.remove());
@@ -126,145 +119,34 @@ function extractPageText() {
         // Ignore invalid selectors
       }
     });
-
-    clone.querySelectorAll('[aria-hidden="true"]').forEach(el => el.remove());
-
-    const blocks = [];
-    walkElement(clone, blocks, []);
-
-    const text = blocks
-      .map(formatBlockText)
-      .filter(line => line.length > 0)
-      .join('\n\n')
-      .replace(/\n{3,}/g, '\n\n');
-
-    if (text && text.trim().length > 0) {
-      return { text, blocks };
+    
+    // Get text content - prefer innerText for better whitespace handling
+    if (clone.innerText) {
+      text = clone.innerText;
+    } else if (clone.textContent) {
+      text = clone.textContent;
     }
-
-    // Fallback: use the live document if the semantic root yields nothing
-    return {
-      text: document.body.innerText || document.body.textContent || '',
-      blocks: []
-    };
+    
+    // If we still don't have text, try getting it from the live document
+    if (!text || text.trim().length === 0) {
+      text = document.body.innerText || document.body.textContent || '';
+    }
+    
+    // Clean up whitespace
+    text = text
+      .split('\n')
+      .map(line => line.trim())
+      .filter(line => line.length > 0)
+      .join('\n');
+    
+    return text;
   } catch (error) {
     console.error('Error in extractPageText:', error);
+    // Fallback: try to get text directly from document
     try {
-      return {
-        text: document.body.innerText || document.body.textContent || '',
-        blocks: []
-      };
+      return document.body.innerText || document.body.textContent || '';
     } catch (e) {
-      return { text: '', blocks: [] };
+      return '';
     }
   }
-}
-
-function formatBlockText(block) {
-  if (block.type === 'li') {
-    return `- ${block.text}`;
-  }
-  if (block.type === 'table') {
-    return block.text;
-  }
-  return block.text;
-}
-
-function walkElement(node, blocks, headingPath) {
-  if (!node) {
-    return headingPath;
-  }
-
-  if (node.nodeType === Node.TEXT_NODE) {
-    const text = normalizeText(node.textContent);
-    if (text) {
-      blocks.push({ type: 'p', text, headingPath: [...headingPath] });
-    }
-    return headingPath;
-  }
-
-  if (node.nodeType !== Node.ELEMENT_NODE) {
-    return headingPath;
-  }
-
-  if (node.hidden || node.getAttribute('aria-hidden') === 'true') {
-    return headingPath;
-  }
-
-  const tagName = node.tagName.toUpperCase();
-
-  if (['SCRIPT', 'STYLE', 'NOSCRIPT', 'META', 'LINK', 'SVG', 'IFRAME'].includes(tagName)) {
-    return headingPath;
-  }
-
-  if (['H1', 'H2', 'H3', 'H4', 'H5', 'H6'].includes(tagName)) {
-    const text = getElementText(node);
-    if (text) {
-      const level = Number(tagName.slice(1));
-      const newHeadingPath = headingPath.slice(0, level - 1);
-      newHeadingPath.push(text);
-      blocks.push({ type: tagName.toLowerCase(), text, headingPath: [...newHeadingPath] });
-      return newHeadingPath;
-    }
-    return headingPath;
-  }
-
-  if (tagName === 'P') {
-    const text = getElementText(node);
-    if (text) {
-      blocks.push({ type: 'p', text, headingPath: [...headingPath] });
-    }
-    return headingPath;
-  }
-
-  if (tagName === 'LI') {
-    const text = getElementText(node);
-    if (text) {
-      blocks.push({ type: 'li', text, headingPath: [...headingPath] });
-    }
-    return headingPath;
-  }
-
-  if (tagName === 'PRE') {
-    const text = getElementText(node);
-    if (text) {
-      blocks.push({ type: 'pre', text, headingPath: [...headingPath] });
-    }
-    return headingPath;
-  }
-
-  if (tagName === 'CODE' && !node.closest('pre')) {
-    const text = getElementText(node);
-    if (text) {
-      blocks.push({ type: 'code', text, headingPath: [...headingPath] });
-    }
-    return headingPath;
-  }
-
-  if (tagName === 'TABLE') {
-    const rows = Array.from(node.querySelectorAll('tr')).map(row => {
-      const cells = Array.from(row.querySelectorAll('th, td')).map(cell => getElementText(cell)).filter(Boolean);
-      return cells.join('\t');
-    }).filter(Boolean);
-
-    if (rows.length > 0) {
-      blocks.push({ type: 'table', text: rows.join('\n'), headingPath: [...headingPath] });
-    }
-    return headingPath;
-  }
-
-  let currentHeadingPath = headingPath;
-  Array.from(node.childNodes).forEach(child => {
-    currentHeadingPath = walkElement(child, blocks, currentHeadingPath);
-  });
-
-  return currentHeadingPath;
-}
-
-function normalizeText(text) {
-  return text ? text.replace(/\s+/g, ' ').trim() : '';
-}
-
-function getElementText(element) {
-  return normalizeText(element.innerText || element.textContent || '');
 }
