@@ -12,6 +12,7 @@ const clearAllBtn = document.getElementById('clearAllBtn');
 const copyPageBtn = document.getElementById('copyPageBtn');
 
 const importFile = document.getElementById('importFile');
+const previewBtn = document.getElementById('previewBtn');
 const snapshotsList = document.getElementById('snapshotsList');
 const emptyState = document.getElementById('emptyState');
 const statsContainer = document.getElementById('statsContainer');
@@ -160,6 +161,9 @@ exportJsonBtn.addEventListener('click', () => {
   handleExportJson();
 });
 importBtn.addEventListener('click', () => importFile.click());
+previewBtn.addEventListener('click', () => {
+  chrome.tabs.create({ url: 'https://manemark-24e4e.web.app/' });
+});
 clearAllBtn.addEventListener('click', clearAllSnapshots);
 copyPageBtn.addEventListener('click', copyCurrentPageText);
 importFile.addEventListener('change', handleImport);
