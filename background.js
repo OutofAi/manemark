@@ -11,10 +11,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         url: request.url,
         title: request.title,
         text: request.text,
+        blocks: request.blocks || [],
+        pageMetrics: request.pageMetrics || null,
         timestamp: new Date().toISOString(),
         textPreview: request.text.substring(0, 150) + (request.text.length > 150 ? '...' : '')
       };
-
+      
       const existingIndex = snapshots.findIndex(s => s.url === request.url);
 
       if (existingIndex !== -1) {
