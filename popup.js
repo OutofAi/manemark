@@ -10,6 +10,7 @@ const exportJsonBtn = document.getElementById('exportJsonBtn');
 const importBtn = document.getElementById('importBtn');
 const clearAllBtn = document.getElementById('clearAllBtn');
 const copyPageBtn = document.getElementById('copyPageBtn');
+const storageSettingsBtn = document.getElementById('storageSettingsBtn');
 
 const importFile = document.getElementById('importFile');
 const previewBtn = document.getElementById('previewBtn');
@@ -165,6 +166,7 @@ previewBtn.addEventListener('click', () => {
   chrome.tabs.create({ url: 'https://manemark-24e4e.web.app/' });
 });
 clearAllBtn.addEventListener('click', clearAllSnapshots);
+storageSettingsBtn.addEventListener('click', () => chrome.runtime.openOptionsPage());
 copyPageBtn.addEventListener('click', copyCurrentPageText);
 importFile.addEventListener('change', handleImport);
 
@@ -375,7 +377,11 @@ function captureCurrentPageText() {
             }
 
             if (response && response.success) {
-              showToast('✓ Text captured successfully!');
+              if (response.externalSync === false) {
+                showToast('✓ Captured to Chrome cache — reconnect storage folder', 'error');
+              } else {
+                showToast('✓ Text captured successfully!');
+              }
               loadSnapshots();
               refreshCurrentPageState();
             } else {

@@ -1,22 +1,27 @@
 {
   "manifest_version": 3,
   "name": "Manemark",
-  "version": "1.0.3",
+  "version": "1.0.5",
   "description": "Manemark a page to capture the text content of any webpage and prepares it for use as LLM context",
   "action": {
     "default_icon": "assets/icon.png",
     "default_popup": "popup.html",
     "default_title": "Manemark - Capture page text"
   },
-   "icons": {
-      "128": "assets/icon.png"
-   },
+  "icons": {
+    "128": "assets/icon.png"
+  },
   "background": {
     "service_worker": "background.js"
   },
   "permissions": [
     "storage",
     "activeTab",
-    "scripting"
-  ]
+    "scripting",
+    "nativeMessaging"
+  ],
+  "options_ui": {
+    "page": "storage-settings.html",
+    "open_in_tab": true
+  }
 }
