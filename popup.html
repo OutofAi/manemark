@@ -1,6 +1,5 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -14,14 +13,12 @@
 
     /* Light theme (default) */
     body {
-      width: 370px;
-      height: 600px;
-      /* use height instead of max-height */
+      width: 400px;
+      height: 600px;       /* use height instead of max-height */
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
       background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
       color: #333;
-      overflow: hidden;
-      /* prevent body from scrolling */
+      overflow: hidden;    /* prevent body from scrolling */
     }
 
     .container {
@@ -29,8 +26,7 @@
       flex-direction: column;
       height: 100%;
       background: white;
-      overflow: hidden;
-      /* keep scrolling inside content only */
+      overflow: hidden;    /* keep scrolling inside content only */
     }
 
     .header {
@@ -41,21 +37,17 @@
       justify-content: space-between;
       align-items: center;
 
-      flex-shrink: 0;
-      /* important: header stays fixed height */
-      position: sticky;
-      /* optional but good */
+      flex-shrink: 0;      /* important: header stays fixed height */
+      position: sticky;    /* optional but good */
       top: 0;
       z-index: 10;
-      border-bottom: #b6b6b67a 1px solid;
     }
 
     .content {
       flex: 1;
       overflow-y: auto;
       padding: 16px 20px;
-      min-height: 0;
-      /* important in flex layouts */
+      min-height: 0;       /* important in flex layouts */
     }
 
     .header h1 {
@@ -103,6 +95,21 @@
       transition: all 0.2s ease;
     }
 
+    .btn-page-copy {
+      background: #ffffff00;
+      color: white;
+      width: 42px;
+      height: 42px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
+    }
+
+    .btn-page-copy:hover { background: #ffffff40; }
+    .btn-page-copy:disabled { opacity: 0.5; cursor: wait; }
+    .btn-page-copy img { width: 20px; height: 20px; filter: invert(1); }
+
     .btn-snap {
       background: #ef4581be;
       color: #F1F1F2;
@@ -115,14 +122,13 @@
       visibility: hidden;
     }
 
-    .btn-snap:hover {
-      background: #DB3F78;
-    }
-
     .btn-snap.ready {
       visibility: visible;
     }
 
+    .btn-snap:hover {
+      background: #DB3F78;
+    }
 
     .btn-icon {
       width: 20px;
@@ -137,14 +143,6 @@
 
     .btn-snap.loading {
       opacity: 0.7;
-      pointer-events: none;
-    }
-
-    button:disabled,
-    .btn-small:disabled,
-    .dropdown-toggle:disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
       pointer-events: none;
     }
 
@@ -274,7 +272,7 @@
       overflow: hidden;
       line-height: 1.4;
     }
-
+    
     .dropdown {
       position: relative;
     }
@@ -318,11 +316,10 @@
     .dropdown-item:hover {
       background: #DB3F78;
     }
-
+    
     .snapshot-actions {
       display: flex;
       gap: 6px;
-      justify-content: right;
     }
 
     .btn-small {
@@ -334,9 +331,7 @@
       transition: all 0.2s ease;
     }
 
-    .btn-preview,
     .btn-copy,
-    .btn-settings,
     .btn-delete {
       background: transparent;
       color: #6b7280;
@@ -346,7 +341,7 @@
       background: transparent;
       color: white;
     }
-
+    
 
     .btn-icon-item {
       width: 16px;
@@ -360,26 +355,24 @@
 
     .top-actions {
       display: flex;
+      justify-content: center;
       align-items: center;
-      gap: 5px;
-      padding: 5px 20px;
+      gap: 8px;
+      padding: 4px 20px;
       background: #72278f;
       flex-shrink: 0;
-    }
 
-    .top-actions > :first-child {
-      margin-right: auto;
     }
 
     .top-action-btn {
-      min-width: 24px;
-      justify-content: right;
+      min-width: 84px;
+      justify-content: center;
       align-items: center;
       text-align: center;
       font-size: 14px;
       font-weight: 600;
       display: inline-flex;
-
+      padding: 10px 12px;
       color: white;
     }
 
@@ -406,7 +399,6 @@
         transform: translateX(400px);
         opacity: 0;
       }
-
       to {
         transform: translateX(0);
         opacity: 1;
@@ -600,21 +592,10 @@
         color: #ffffff;
       }
 
-
-      .btn-snap {
-        background: #A55417;
-      }
-
-      .btn-snap:hover {
-        background: #793f12;
-      }
-
       .btn-copy:hover,
       .btn-delete:hover {
         color: #ffffff;
-      }
-
-      body {
+      }      body {
         background: #111111;
         color: #e5e5e5;
       }
@@ -676,10 +657,6 @@
         border-color: #2f2f2f;
       }
 
-      .dropdown-item:hover {
-        background: #3f3f46;
-      }
-
       .stats {
         background: #111111;
         color: #a3a3a3;
@@ -710,7 +687,6 @@
     }
   </style>
 </head>
-
 <body>
   <div class="container">
     <div class="header">
@@ -718,61 +694,20 @@
         <img src="assets/sleepy_mane.png" alt="mane" class="header-icon" id="popIcon" />
       </h1>
       <div class="controls">
-
-        <button class="btn-small btn-copy top-action-btn" id="copyPageBtn" aria-label="Copy current page"
-          title="Copy current page">
-          <svg width="32px" height="32px" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path
-              d="M9 9.75C9 8.50736 10.0074 7.5 11.25 7.5H16.5C17.7426 7.5 18.75 8.50736 18.75 9.75V15C18.75 16.2426 17.7426 17.25 16.5 17.25H11.25C10.0074 17.25 9 16.2426 9 15V9.75Z"
-              stroke="#ffffff" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" />
-            <path
-              d="M6.75 14.25H6C4.75736 14.25 3.75 13.2426 3.75 12V6.75C3.75 5.50736 4.75736 4.5 6 4.5H11.25C12.4926 4.5 13.5 5.50736 13.5 6.75V7.5"
-              stroke="#ffffff" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" />
-          </svg>
+        <button class="btn-page-copy" id="copyPageBtn" aria-label="Copy page text without Manemarking" title="Copy page text (without saving)">
+          <img src="assets/copy.svg" alt="">
         </button>
-
         <button class="btn-snap" id="snapBtn">
-          <span id="snapText">Manemark</span>
           <img src="assets/bookmark.svg" alt="" class="btn-icon">
-
+          <span id="snapText">Manemark</span>
         </button>
-
       </div>
     </div>
 
     <div class="top-actions">
-
-
-      <button class="btn-small btn-preview top-action-btn" id="previewBtn">
-        <svg width="24px" height="24px" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <path fill-rule="evenodd" clip-rule="evenodd"
-            d="M7.78799 2H16.212C17.0305 1.99999 17.7061 1.99998 18.2561 2.04565C18.8274 2.0931 19.3523 2.19496 19.8439 2.45035C20.5745 2.82985 21.1702 3.42553 21.5497 4.1561C21.805 4.64774 21.9069 5.17258 21.9543 5.74393C22 6.29394 22 6.96949 22 7.78802V11.212C22 12.0305 22 12.7061 21.9543 13.2561C21.9069 13.8274 21.805 14.3523 21.5497 14.8439C21.1702 15.5745 20.5745 16.1702 19.8439 16.5497C19.3523 16.805 18.8274 16.9069 18.2561 16.9544C17.7061 17 17.0305 17 16.212 17H13V19H17C17.5523 19 18 19.4477 18 20C18 20.5523 17.5523 21 17 21H7C6.44772 21 6 20.5523 6 20C6 19.4477 6.44772 19 7 19H11V17H7.78798C6.96946 17 6.29393 17 5.74393 16.9544C5.17258 16.9069 4.64774 16.805 4.1561 16.5497C3.42553 16.1702 2.82985 15.5745 2.45035 14.8439C2.19496 14.3523 2.0931 13.8274 2.04565 13.2561C1.99998 12.7061 1.99999 12.0305 2 11.212V7.78799C1.99999 6.96947 1.99998 6.29393 2.04565 5.74393C2.0931 5.17258 2.19496 4.64774 2.45035 4.1561C2.82985 3.42553 3.42553 2.82985 4.1561 2.45035C4.64774 2.19496 5.17258 2.0931 5.74393 2.04565C6.29393 1.99998 6.96947 1.99999 7.78799 2ZM16.17 15C17.041 15 17.6331 14.9992 18.0905 14.9612C18.536 14.9242 18.7634 14.8572 18.9219 14.7748C19.2872 14.5851 19.5851 14.2872 19.7748 13.9219C19.8572 13.7634 19.9242 13.536 19.9612 13.0905C19.9992 12.6331 20 12.041 20 11.17V7.83C20 6.95898 19.9992 6.36686 19.9612 5.90945C19.9242 5.46401 19.8572 5.23663 19.7748 5.07805C19.5851 4.71277 19.2872 4.41493 18.9219 4.22517C18.7634 4.1428 18.536 4.07578 18.0905 4.03879C17.6331 4.0008 17.041 4 16.17 4H7.83C6.95898 4 6.36686 4.0008 5.90945 4.03879C5.46401 4.07578 5.23663 4.1428 5.07805 4.22517C4.71277 4.41493 4.41493 4.71277 4.22517 5.07805C4.1428 5.23663 4.07578 5.46401 4.03879 5.90945C4.0008 6.36686 4 6.95898 4 7.83V11.17C4 12.041 4.0008 12.6331 4.03879 13.0905C4.07578 13.536 4.1428 13.7634 4.22517 13.9219C4.41493 14.2872 4.71277 14.5851 5.07805 14.7748C5.23663 14.8572 5.46401 14.9242 5.90945 14.9612C6.36686 14.9992 6.95898 15 7.83 15H16.17Z"
-            fill="#ffffff" />
-        </svg>
-      </button>
-
-
-      <button class="btn-small btn-copy top-action-btn" id="importBtn">
-        <svg width="24px" height="24px" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <path
-            d="M12.5535 2.49392C12.4114 2.33852 12.2106 2.25 12 2.25C11.7894 2.25 11.5886 2.33852 11.4465 2.49392L7.44648 6.86892C7.16698 7.17462 7.18822 7.64902 7.49392 7.92852C7.79963 8.20802 8.27402 8.18678 8.55352 7.88108L11.25 4.9318V16C11.25 16.4142 11.5858 16.75 12 16.75C12.4142 16.75 12.75 16.4142 12.75 16V4.9318L15.4465 7.88108C15.726 8.18678 16.2004 8.20802 16.5061 7.92852C16.8118 7.64902 16.833 7.17462 16.5535 6.86892L12.5535 2.49392Z"
-            fill="#ffffff" />
-          <path
-            d="M3.75 15C3.75 14.5858 3.41422 14.25 3 14.25C2.58579 14.25 2.25 14.5858 2.25 15V15.0549C2.24998 16.4225 2.24996 17.5248 2.36652 18.3918C2.48754 19.2919 2.74643 20.0497 3.34835 20.6516C3.95027 21.2536 4.70814 21.5125 5.60825 21.6335C6.47522 21.75 7.57754 21.75 8.94513 21.75H15.0549C16.4225 21.75 17.5248 21.75 18.3918 21.6335C19.2919 21.5125 20.0497 21.2536 20.6517 20.6516C21.2536 20.0497 21.5125 19.2919 21.6335 18.3918C21.75 17.5248 21.75 16.4225 21.75 15.0549V15C21.75 14.5858 21.4142 14.25 21 14.25C20.5858 14.25 20.25 14.5858 20.25 15C20.25 16.4354 20.2484 17.4365 20.1469 18.1919C20.0482 18.9257 19.8678 19.3142 19.591 19.591C19.3142 19.8678 18.9257 20.0482 18.1919 20.1469C17.4365 20.2484 16.4354 20.25 15 20.25H9C7.56459 20.25 6.56347 20.2484 5.80812 20.1469C5.07435 20.0482 4.68577 19.8678 4.40901 19.591C4.13225 19.3142 3.9518 18.9257 3.85315 18.1919C3.75159 17.4365 3.75 16.4354 3.75 15Z"
-            fill="#ffffff" />
-        </svg>
-      </button>
-
       <div class="dropdown">
         <button class="btn-small top-action-btn dropdown-toggle" id="exportMenuBtn">
-          <svg width="24px" height="24px" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path
-              d="M12.5535 16.5061C12.4114 16.6615 12.2106 16.75 12 16.75C11.7894 16.75 11.5886 16.6615 11.4465 16.5061L7.44648 12.1311C7.16698 11.8254 7.18822 11.351 7.49392 11.0715C7.79963 10.792 8.27402 10.8132 8.55352 11.1189L11.25 14.0682V3C11.25 2.58579 11.5858 2.25 12 2.25C12.4142 2.25 12.75 2.58579 12.75 3V14.0682L15.4465 11.1189C15.726 10.8132 16.2004 10.792 16.5061 11.0715C16.8118 11.351 16.833 11.8254 16.5535 12.1311L12.5535 16.5061Z"
-              fill="#ffffff" />
-            <path
-              d="M3.75 15C3.75 14.5858 3.41422 14.25 3 14.25C2.58579 14.25 2.25 14.5858 2.25 15V15.0549C2.24998 16.4225 2.24996 17.5248 2.36652 18.3918C2.48754 19.2919 2.74643 20.0497 3.34835 20.6516C3.95027 21.2536 4.70814 21.5125 5.60825 21.6335C6.47522 21.75 7.57754 21.75 8.94513 21.75H15.0549C16.4225 21.75 17.5248 21.75 18.3918 21.6335C19.2919 21.5125 20.0497 21.2536 20.6517 20.6516C21.2536 20.0497 21.5125 19.2919 21.6335 18.3918C21.75 17.5248 21.75 16.4225 21.75 15.0549V15C21.75 14.5858 21.4142 14.25 21 14.25C20.5858 14.25 20.25 14.5858 20.25 15C20.25 16.4354 20.2484 17.4365 20.1469 18.1919C20.0482 18.9257 19.8678 19.3142 19.591 19.591C19.3142 19.8678 18.9257 20.0482 18.1919 20.1469C17.4365 20.2484 16.4354 20.25 15 20.25H9C7.56459 20.25 6.56347 20.2484 5.80812 20.1469C5.07435 20.0482 4.68577 19.8678 4.40901 19.591C4.13225 19.3142 3.9518 18.9257 3.85315 18.1919C3.75159 17.4365 3.75 16.4354 3.75 15Z"
-              fill="#ffffff" />
-          </svg> ▾
+          Export ▾
         </button>
         <div class="dropdown-menu" id="exportMenu">
           <button class="dropdown-item" id="exportJsonBtn">JSON</button>
@@ -780,25 +715,8 @@
         </div>
       </div>
 
-      <button class="btn-small btn-settings top-action-btn" id="storageSettingsBtn" aria-label="Storage settings" title="Storage settings">
-        <svg width="24px" height="24px" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <path d="M14 5.28988H13C13 5.7323 13.2907 6.12213 13.7148 6.24833L14 5.28988ZM15.3302 5.84137L14.8538 6.72058C15.2429 6.93144 15.7243 6.86143 16.0373 6.54847L15.3302 5.84137ZM16.2426 4.92891L15.5355 4.2218V4.2218L16.2426 4.92891ZM17.6569 4.92891L16.9498 5.63601L16.9498 5.63602L17.6569 4.92891ZM19.0711 6.34312L19.7782 5.63602V5.63602L19.0711 6.34312ZM19.0711 7.75734L18.364 7.05023L19.0711 7.75734ZM18.1586 8.66978L17.4515 7.96268C17.1386 8.27563 17.0686 8.75709 17.2794 9.14621L18.1586 8.66978ZM18.7101 10L17.7517 10.2853C17.8779 10.7093 18.2677 11 18.7101 11V10ZM18.7101 14V13C18.2677 13 17.8779 13.2907 17.7517 13.7148L18.7101 14ZM18.1586 15.3302L17.2794 14.8538C17.0686 15.2429 17.1386 15.7244 17.4515 16.0373L18.1586 15.3302ZM19.0711 16.2427L19.7782 15.5356V15.5356L19.0711 16.2427ZM19.0711 17.6569L18.364 16.9498L18.364 16.9498L19.0711 17.6569ZM17.6569 19.0711L18.364 19.7782V19.7782L17.6569 19.0711ZM15.3302 18.1586L16.0373 17.4515C15.7243 17.1386 15.2429 17.0686 14.8538 17.2794L15.3302 18.1586ZM14 18.7101L13.7148 17.7517C13.2907 17.8779 13 18.2677 13 18.7101H14ZM10 18.7101H11C11 18.2677 10.7093 17.8779 10.2853 17.7517L10 18.7101ZM8.6698 18.1586L9.14623 17.2794C8.7571 17.0685 8.27565 17.1385 7.96269 17.4515L8.6698 18.1586ZM7.75736 19.071L7.05026 18.3639L7.05026 18.3639L7.75736 19.071ZM6.34315 19.071L5.63604 19.7782H5.63604L6.34315 19.071ZM4.92894 17.6568L4.22183 18.3639H4.22183L4.92894 17.6568ZM4.92894 16.2426L4.22183 15.5355H4.22183L4.92894 16.2426ZM5.84138 15.3302L6.54849 16.0373C6.86144 15.7243 6.93146 15.2429 6.7206 14.8537L5.84138 15.3302ZM5.28989 14L6.24835 13.7147C6.12215 13.2907 5.73231 13 5.28989 13V14ZM5.28989 10V11C5.73231 11 6.12215 10.7093 6.24835 10.2852L5.28989 10ZM5.84138 8.66982L6.7206 9.14625C6.93146 8.75712 6.86145 8.27567 6.54849 7.96272L5.84138 8.66982ZM4.92894 7.75738L4.22183 8.46449H4.22183L4.92894 7.75738ZM4.92894 6.34317L5.63605 7.05027H5.63605L4.92894 6.34317ZM6.34315 4.92895L7.05026 5.63606L7.05026 5.63606L6.34315 4.92895ZM7.75737 4.92895L8.46447 4.22185V4.22185L7.75737 4.92895ZM8.6698 5.84139L7.9627 6.54849C8.27565 6.86145 8.7571 6.93146 9.14623 6.7206L8.6698 5.84139ZM10 5.28988L10.2853 6.24833C10.7093 6.12213 11 5.7323 11 5.28988H10ZM11 2C9.89545 2 9.00002 2.89543 9.00002 4H11V4V2ZM13 2H11V4H13V2ZM15 4C15 2.89543 14.1046 2 13 2V4H15ZM15 5.28988V4H13V5.28988H15ZM15.8066 4.96215C15.3271 4.70233 14.8179 4.48994 14.2853 4.33143L13.7148 6.24833C14.1132 6.36691 14.4944 6.52587 14.8538 6.72058L15.8066 4.96215ZM15.5355 4.2218L14.6231 5.13426L16.0373 6.54847L16.9498 5.63602L15.5355 4.2218ZM18.364 4.2218C17.5829 3.44075 16.3166 3.44075 15.5355 4.2218L16.9498 5.63602V5.63601L18.364 4.2218ZM19.7782 5.63602L18.364 4.2218L16.9498 5.63602L18.364 7.05023L19.7782 5.63602ZM19.7782 8.46444C20.5592 7.68339 20.5592 6.41706 19.7782 5.63602L18.364 7.05023L18.364 7.05023L19.7782 8.46444ZM18.8657 9.37689L19.7782 8.46444L18.364 7.05023L17.4515 7.96268L18.8657 9.37689ZM19.6686 9.71475C19.5101 9.18211 19.2977 8.67285 19.0378 8.19335L17.2794 9.14621C17.4741 9.50555 17.6331 9.8868 17.7517 10.2853L19.6686 9.71475ZM18.7101 11H20V9H18.7101V11ZM20 11H22C22 9.89543 21.1046 9 20 9V11ZM20 11V13H22V11H20ZM20 13V15C21.1046 15 22 14.1046 22 13H20ZM20 13H18.7101V15H20V13ZM19.0378 15.8066C19.2977 15.3271 19.5101 14.8179 19.6686 14.2852L17.7517 13.7148C17.6331 14.1132 17.4741 14.4944 17.2794 14.8538L19.0378 15.8066ZM19.7782 15.5356L18.8657 14.6231L17.4515 16.0373L18.364 16.9498L19.7782 15.5356ZM19.7782 18.364C20.5592 17.5829 20.5592 16.3166 19.7782 15.5356L18.364 16.9498H18.364L19.7782 18.364ZM18.364 19.7782L19.7782 18.364L18.364 16.9498L16.9498 18.364L18.364 19.7782ZM15.5355 19.7782C16.3166 20.5592 17.5829 20.5592 18.364 19.7782L16.9498 18.364L15.5355 19.7782ZM14.6231 18.8657L15.5355 19.7782L16.9498 18.364L16.0373 17.4515L14.6231 18.8657ZM14.2853 19.6686C14.8179 19.5101 15.3271 19.2977 15.8066 19.0378L14.8538 17.2794C14.4944 17.4741 14.1132 17.6331 13.7148 17.7517L14.2853 19.6686ZM15 20V18.7101H13V20H15ZM13 22C14.1046 22 15 21.1046 15 20H13V22ZM11 22H13V20H11V22ZM9.00002 20C9.00002 21.1046 9.89545 22 11 22V20H9.00002ZM9.00002 18.7101V20H11V18.7101H9.00002ZM8.19337 19.0378C8.67287 19.2977 9.18213 19.5101 9.71477 19.6686L10.2853 17.7517C9.88681 17.6331 9.50557 17.4741 9.14623 17.2794L8.19337 19.0378ZM8.46447 19.7782L9.3769 18.8657L7.96269 17.4515L7.05026 18.3639L8.46447 19.7782ZM5.63604 19.7782C6.41709 20.5592 7.68342 20.5592 8.46447 19.7781L7.05026 18.3639L5.63604 19.7782ZM4.22183 18.3639L5.63604 19.7782L7.05026 18.3639L5.63604 16.9497L4.22183 18.3639ZM4.22183 15.5355C3.44078 16.3166 3.44078 17.5829 4.22183 18.3639L5.63604 16.9497V16.9497L4.22183 15.5355ZM5.13427 14.6231L4.22183 15.5355L5.63604 16.9497L6.54849 16.0373L5.13427 14.6231ZM4.33144 14.2852C4.48996 14.8179 4.70234 15.3271 4.96217 15.8066L6.7206 14.8537C6.52589 14.4944 6.36693 14.1132 6.24835 13.7147L4.33144 14.2852ZM5.28989 13H4V15H5.28989V13ZM4 13H4H2C2 14.1046 2.89543 15 4 15V13ZM4 13V11H2V13H4ZM4 11V9C2.89543 9 2 9.89543 2 11H4ZM4 11H5.28989V9H4V11ZM4.96217 8.1934C4.70235 8.67288 4.48996 9.18213 4.33144 9.71475L6.24835 10.2852C6.36693 9.88681 6.52589 9.50558 6.7206 9.14625L4.96217 8.1934ZM4.22183 8.46449L5.13428 9.37693L6.54849 7.96272L5.63605 7.05027L4.22183 8.46449ZM4.22183 5.63606C3.44078 6.41711 3.44079 7.68344 4.22183 8.46449L5.63605 7.05027L5.63605 7.05027L4.22183 5.63606ZM5.63605 4.22185L4.22183 5.63606L5.63605 7.05027L7.05026 5.63606L5.63605 4.22185ZM8.46447 4.22185C7.68343 3.4408 6.4171 3.4408 5.63605 4.22185L7.05026 5.63606V5.63606L8.46447 4.22185ZM9.37691 5.13428L8.46447 4.22185L7.05026 5.63606L7.9627 6.54849L9.37691 5.13428ZM9.71477 4.33143C9.18213 4.48995 8.67287 4.70234 8.19337 4.96218L9.14623 6.7206C9.50557 6.52588 9.88681 6.36692 10.2853 6.24833L9.71477 4.33143ZM9.00002 4V5.28988H11V4H9.00002Z" fill="#ffffff"/>
-          <circle cx="12" cy="12" r="3" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-        </svg>
-      </button>
-
-      <button class="btn-small btn-delete top-action-btn" id="clearAllBtn">
-        <svg width="24px" height="24px" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <path d="M10 12V17" stroke="#ffffff" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" />
-          <path d="M14 12V17" stroke="#ffffff" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" />
-          <path d="M4 7H20" stroke="#ffffff" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" />
-          <path d="M6 10V18C6 19.6569 7.34315 21 9 21H15C16.6569 21 18 19.6569 18 18V10" stroke="#ffffff"
-            stroke-width="1" stroke-linecap="round" stroke-linejoin="round" />
-          <path d="M9 5C9 3.89543 9.89543 3 11 3H13C14.1046 3 15 3.89543 15 5V7H9V5Z" stroke="#ffffff" stroke-width="1"
-            stroke-linecap="round" stroke-linejoin="round" />
-        </svg></button>
-
-
+      <button class="btn-small btn-copy top-action-btn" id="importBtn">Import</button>
+      <button class="btn-small btn-delete top-action-btn" id="clearAllBtn">Clear</button>
       <input type="file" id="importFile" accept=".json" style="display: none;">
     </div>
 
@@ -807,7 +725,7 @@
       <div id="snapshotsList"></div>
       <div id="emptyState" class="empty-state">
         <div class="empty-icon"><img src="assets/sleepy_mane.png" alt="" class="sleepy-icon"></div>
-
+        
         <h1>No Manemark yet</h1>
         <p>Click "Manemark" to capture text from this page</p>
       </div>
@@ -821,8 +739,7 @@
   <div class="modal-overlay" id="tokenModal">
     <div class="modal-content">
       <h2>Set Token Limit per File</h2>
-      <p>Enter the maximum number of tokens per JSON file. Snapshots will be automatically split across files to respect
-        this limit.</p>
+      <p>Enter the maximum number of tokens per JSON file. Snapshots will be automatically split across files to respect this limit.</p>
       <input type="number" id="modalTokenLimit" value="4000" min="500" max="100000" step="500">
       <div class="modal-buttons">
         <button class="btn-cancel" id="modalCancel">Cancel</button>
@@ -834,5 +751,4 @@
   <script src="jszip.min.js"></script>
   <script src="popup.js"></script>
 </body>
-
 </html>

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Manemark",
-  "version": "1.0.5",
+  "version": "1.0.4",
   "description": "Manemark a page to capture the text content of any webpage and prepares it for use as LLM context",
   "action": {
     "default_icon": "assets/icon.png",
@@ -18,10 +18,6 @@
     "storage",
     "activeTab",
     "scripting",
-    "nativeMessaging"
-  ],
-  "options_ui": {
-    "page": "storage-settings.html",
-    "open_in_tab": true
-  }
+    "clipboardWrite"
+  ]
 }

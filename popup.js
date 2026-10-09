@@ -2,6 +2,7 @@
 // Handles UI interactions and snapshot management with token-aware export
 
 const snapBtn = document.getElementById('snapBtn');
+const copyPageBtn = document.getElementById('copyPageBtn');
 const popIcon = document.getElementById('popIcon');
 const exportMenuBtn = document.getElementById('exportMenuBtn');
 const exportMenu = document.getElementById('exportMenu');
@@ -9,11 +10,8 @@ const exportZipBtn = document.getElementById('exportZipBtn');
 const exportJsonBtn = document.getElementById('exportJsonBtn');
 const importBtn = document.getElementById('importBtn');
 const clearAllBtn = document.getElementById('clearAllBtn');
-const copyPageBtn = document.getElementById('copyPageBtn');
-const storageSettingsBtn = document.getElementById('storageSettingsBtn');
 
 const importFile = document.getElementById('importFile');
-const previewBtn = document.getElementById('previewBtn');
 const snapshotsList = document.getElementById('snapshotsList');
 const emptyState = document.getElementById('emptyState');
 const statsContainer = document.getElementById('statsContainer');
@@ -68,7 +66,6 @@ async function refreshCurrentPageState() {
     snapshots.find(s => normalizeUrl(s.url) === activeUrl) || null;
 
   setSnapButtonState(Boolean(currentSnapshot));
-  updateExportMenuState(snapshots.length > 0);
   renderSnapshots(snapshots);
 
   if (currentSnapshot) {
@@ -119,16 +116,6 @@ function setSnapButtonState(isSaved) {
   }
 }
 
-function updateExportMenuState(isEnabled) {
-  exportMenuBtn.disabled = !isEnabled;
-  if (!isEnabled) {
-    exportMenu.classList.remove('show');
-    exportMenuBtn.setAttribute('aria-disabled', 'true');
-  } else {
-    exportMenuBtn.removeAttribute('aria-disabled');
-  }
-}
-
 // Load snapshots when popup opens
 loadSnapshots();
 refreshCurrentPageState();
@@ -152,6 +139,35 @@ snapBtn.addEventListener('click', async () => {
     captureCurrentPageText();
   }
 });
+// Copy text from the active webpage directly to the clipboard, without storing a snapshot.
+copyPageBtn.addEventListener('click', async () => {
+  copyPageBtn.disabled = true;
+  try {
+    const tab = await getActiveTab();
+    if (!tab?.id) throw new Error('No active tab found');
+
+    await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      files: ['content.js']
+    });
+
+    const response = await new Promise((resolve, reject) => {
+      chrome.tabs.sendMessage(tab.id, { action: 'copyPageText' }, (result) => {
+        if (chrome.runtime.lastError) reject(new Error(chrome.runtime.lastError.message));
+        else resolve(result);
+      });
+    });
+
+    if (!response?.success) throw new Error(response?.message || 'Failed to read page text');
+    await navigator.clipboard.writeText(response.text);
+    showToast('✓ Page text copied!');
+  } catch (error) {
+    showToast(`✗ ${error.message || 'Failed to copy page text'}`, 'error');
+  } finally {
+    copyPageBtn.disabled = false;
+  }
+});
+
 exportZipBtn.addEventListener('click', () => {
   exportMenu.classList.remove('show');
   handleExportZip();
@@ -162,12 +178,7 @@ exportJsonBtn.addEventListener('click', () => {
   handleExportJson();
 });
 importBtn.addEventListener('click', () => importFile.click());
-previewBtn.addEventListener('click', () => {
-  chrome.tabs.create({ url: 'https://manemark-24e4e.web.app/' });
-});
 clearAllBtn.addEventListener('click', clearAllSnapshots);
-storageSettingsBtn.addEventListener('click', () => chrome.runtime.openOptionsPage());
-copyPageBtn.addEventListener('click', copyCurrentPageText);
 importFile.addEventListener('change', handleImport);
 
 // Event delegation for dynamic item buttons only
@@ -377,68 +388,11 @@ function captureCurrentPageText() {
             }
 
             if (response && response.success) {
-              if (response.externalSync === false) {
-                showToast('✓ Captured to Chrome cache — reconnect storage folder', 'error');
-              } else {
-                showToast('✓ Text captured successfully!');
-              }
+              showToast('✓ Text captured successfully!');
               loadSnapshots();
               refreshCurrentPageState();
             } else {
               showToast('✗ Failed to capture text', 'error');
-            }
-          }
-        );
-      }
-    );
-  });
-}
-
-function copyCurrentPageText() {
-  copyPageBtn.disabled = true;
-
-  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-    const tab = tabs[0];
-    if (!tab || !tab.id) {
-      copyPageBtn.disabled = false;
-      showToast('✗ No active tab found', 'error');
-      return;
-    }
-
-    chrome.scripting.executeScript(
-      {
-        target: { tabId: tab.id },
-        files: ['content.js']
-      },
-      () => {
-        if (chrome.runtime.lastError) {
-          copyPageBtn.disabled = false;
-          showToast(`✗ ${chrome.runtime.lastError.message}`, 'error');
-          return;
-        }
-
-        chrome.tabs.sendMessage(
-          tab.id,
-          { action: 'copyPageText' },
-          (response) => {
-            copyPageBtn.disabled = false;
-
-            if (chrome.runtime.lastError) {
-              showToast(`✗ ${chrome.runtime.lastError.message}`, 'error');
-              return;
-            }
-
-            if (response && response.success && response.text) {
-              navigator.clipboard.writeText(response.text)
-                .then(() => {
-                  showToast('✓ Page text copied to clipboard!');
-                })
-                .catch((err) => {
-                  console.error('Clipboard write failed:', err);
-                  showToast('✗ Failed to copy page text', 'error');
-                });
-            } else {
-              showToast(response?.message || '✗ Failed to copy page text', 'error');
             }
           }
         );
@@ -465,8 +419,6 @@ function loadSnapshots() {
         renderSnapshots(snapshots);
         renderStats(snapshots);
       }
-
-      updateExportMenuState(snapshots.length > 0);
     }
   );
 }
@@ -495,17 +447,14 @@ function renderSnapshots(snapshots) {
           </a>
           <div class="snapshot-preview">${escapeHtml(snapshot.textPreview)}</div>
           <div class="snapshot-actions">
-
             <button class="btn-small btn-copy" data-id="${snapshot.id}" aria-label="Copy">
               <svg class="btn-icon-item" viewBox="-0.5 -0.5 16 16" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" width="16" height="16">
                 <path d="M6.875 5.625h5.625s1.25 0 1.25 1.25v5.625s0 1.25 -1.25 1.25h-5.625s-1.25 0 -1.25 -1.25v-5.625s0 -1.25 1.25 -1.25" stroke-width="1"></path>
                 <path d="M3.125 9.375H2.5a1.25 1.25 0 0 1 -1.25 -1.25V2.5a1.25 1.25 0 0 1 1.25 -1.25h5.625a1.25 1.25 0 0 1 1.25 1.25v0.625" stroke-width="1"></path>
               </svg>
             </button>
-
-            
             <button class="btn-small btn-delete" data-id="${snapshot.id}" aria-label="Delete">
-              <svg class="btn-icon-item" viewBox="-0.5 -0.5 16 16" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" class="feather feather-trash-2" id="Trash-2--Streamline-Feather" height="16" width="16">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="-0.5 -0.5 16 16" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" class="feather feather-trash-2" id="Trash-2--Streamline-Feather" height="16" width="16">
                 <path d="m1.875 3.75 1.25 0 10 0" stroke-width="1"></path>
                 <path d="M11.875 3.75v8.75a1.25 1.25 0 0 1 -1.25 1.25H4.375a1.25 1.25 0 0 1 -1.25 -1.25V3.75m1.875 0V2.5a1.25 1.25 0 0 1 1.25 -1.25h2.5a1.25 1.25 0 0 1 1.25 1.25v1.25" stroke-width="1"></path>
                 <path d="m6.25 6.875 0 3.75" stroke-width="1"></path>
