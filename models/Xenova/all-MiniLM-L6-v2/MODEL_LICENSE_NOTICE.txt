@@ -1,0 +1,7 @@
+Model: Xenova/all-MiniLM-L6-v2 (ONNX conversion of sentence-transformers/all-MiniLM-L6-v2)
+Source: https://huggingface.co/Xenova/all-MiniLM-L6-v2
+Original: https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2
+License stated on source model card: Apache License 2.0
+License terms: https://www.apache.org/licenses/LICENSE-2.0
+No checkpoint is included in the source kit; the extension publisher must supply
+model files and comply with the original author's distribution requirements.

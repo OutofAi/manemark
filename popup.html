@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Text Snapper</title>
+  <title>Manemark</title>
   <style>
     * {
       margin: 0;
@@ -41,6 +41,142 @@
       position: sticky;    /* optional but good */
       top: 0;
       z-index: 10;
+    }
+
+
+    /* Pinned below the library statistics; never scrolls out of view. */
+    .index-footer {
+      flex-shrink: 0;
+      /* The active footer always occupies the same space across entries. */
+      height: 66px;
+      padding: 9px 20px 10px;
+      background: #f7f3fa;
+      border-top: 1px solid #e9dff0;
+      color: #5b4268;
+      font-size: 11px;
+    }
+    .index-footer[hidden] { display: none; }
+    .index-footer-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      height: 15px;
+      white-space: nowrap;
+    }
+    .index-footer-label { font-weight: 600; }
+    .index-footer-count { font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .index-footer-track {
+      height: 4px;
+      overflow: hidden;
+      border-radius: 20px;
+      margin-top: 6px;
+      background: #e5d9ec;
+    }
+    .index-footer-fill {
+      width: 0;
+      height: 100%;
+      border-radius: inherit;
+      background: #783393;
+      transition: width 180ms ease-out;
+    }
+    .index-footer.checking .index-footer-fill {
+      width: 35%;
+      animation: index-loading 1.5s ease-in-out infinite alternate;
+    }
+    @keyframes index-loading {
+      from { transform: translateX(-100%); }
+      to { transform: translateX(285%); }
+    }
+    .index-footer-detail {
+      /* Keep the second line even between Manemarks or while checking. */
+      height: 16px;
+      line-height: 16px;
+      margin-top: 4px;
+      color: #786683;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .index-footer.error { color: #ad3939; }
+    .index-footer.error .index-footer-fill { background: #b74b4b; }
+    @media (prefers-reduced-motion: reduce) {
+      .index-footer-fill { transition: none; }
+      .index-footer.checking .index-footer-fill { animation: none; }
+    }
+
+    .semantic-status { display: none; padding: 8px 16px; font-size: 11px; line-height: 1.4; color: #62758b; }
+    .semantic-status.visible { display: block; }
+    .semantic-status.error { color: #b33e3e; }
+    .search-container {
+      padding: 12px 20px 8px;
+      background: white;
+      flex-shrink: 0;
+    }
+
+    .search-field {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      background: #f9fafb;
+      padding: 0 12px;
+    }
+
+    .search-field:focus-within {
+      border-color: #783393;
+    }
+
+    .search-icon {
+      width: 17px;
+      height: 17px;
+      flex-shrink: 0;
+      color: #9ca3af;
+    }
+
+    .search-input {
+      width: 100%;
+      min-width: 0;
+      padding: 11px 0;
+      border: 0;
+      outline: 0;
+      background: transparent;
+      color: #1f2937;
+      font: inherit;
+      font-size: 13px;
+    }
+
+    .search-input::placeholder {
+      color: #9ca3af;
+    }
+
+    .search-results-count {
+      margin-top: 6px;
+      font-size: 11px;
+      color: #6b7280;
+    }
+
+    .search-results-count:empty {
+      display: none;
+    }
+
+    .no-results-state {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      padding: 40px 12px;
+      text-align: center;
+      color: #6b7280;
+      gap: 6px;
+    }
+
+    .no-results-state strong {
+      font-size: 14px;
+    }
+
+    .no-results-state p {
+      font-size: 12px;
     }
 
     .content {
@@ -221,6 +357,10 @@
 
     }
 
+    .snapshot-item-active:hover {
+      border-color: #F27C21;
+    }
+
     .snapshot-header {
       display: flex;
       justify-content: space-between;
@@ -235,6 +375,18 @@
       flex: 1;
       word-break: break-word;
       margin-right: 8px;
+    }
+
+    .snapshot-kind {
+      display: inline-block;
+      margin-left: 4px;
+      padding: 2px 5px;
+      border-radius: 4px;
+      background: #f4e7f9;
+      color: #783393;
+      font-size: 10px;
+      font-weight: 600;
+      vertical-align: middle;
     }
 
     .snapshot-time {
@@ -332,6 +484,7 @@
     }
 
     .btn-copy,
+    .btn-copy-link,
     .btn-delete {
       background: transparent;
       color: #6b7280;
@@ -613,6 +766,28 @@
         background: #111111;
       }
 
+      .search-container {
+        background: #171717;
+      }
+
+      .search-field {
+        background: #222222;
+        border-color: #3a3a3a;
+      }
+
+      .search-field:focus-within {
+        border-color: #a855f7;
+      }
+
+      .search-input {
+        color: #e5e5e5;
+      }
+
+      .search-results-count,
+      .no-results-state {
+        color: #a3a3a3;
+      }
+
       .snapshot-item {
         background: #222222;
         border-color: #222222;
@@ -627,6 +802,10 @@
       .snapshot-item:hover {
         background: #252525;
         border-color: #3a3a3a;
+      }
+
+      .snapshot-item-active:hover {
+        border-color: #f97316;
       }
 
       .snapshot-title {
@@ -661,6 +840,15 @@
         background: #111111;
         color: #a3a3a3;
       }
+      .index-footer {
+        background: #211b27;
+        border-color: #39303e;
+        color: #d8c5e2;
+      }
+      .index-footer-track { background: #44364c; }
+      .index-footer-fill { background: #bc83d1; }
+      .index-footer-detail { color: #c5adc9; }
+      .index-footer.error { color: #ffb1b1; }
 
       .modal-content {
         background: #1c1c1c;
@@ -720,9 +908,26 @@
       <input type="file" id="importFile" accept=".json" style="display: none;">
     </div>
 
+    <div class="search-container" role="search">
+      <div class="search-field">
+        <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+          <circle cx="11" cy="11" r="7"></circle>
+          <path d="m20 20-4-4"></path>
+        </svg>
+        <input type="search" id="searchInput" class="search-input" placeholder="Search..." aria-label="Search saved Manemarks" autocomplete="off" spellcheck="false">
+      </div>
+      <div id="searchResultCount" class="search-results-count" role="status" aria-live="polite"></div>
+    </div>
+
+    <div id="semanticStatus" class="semantic-status" role="status" aria-live="polite"></div>
+
     <div class="content">
 
       <div id="snapshotsList"></div>
+      <div id="noResultsState" class="no-results-state">
+        <strong>No matching Manemarks</strong>
+        <p>Try a different question or clear the search.</p>
+      </div>
       <div id="emptyState" class="empty-state">
         <div class="empty-icon"><img src="assets/sleepy_mane.png" alt="" class="sleepy-icon"></div>
         
@@ -732,6 +937,16 @@
 
     </div>
     <div id="statsContainer"></div>
+    <div id="indexFooter" class="index-footer" role="status" aria-live="polite" aria-label="Background search indexing" hidden>
+      <div class="index-footer-top">
+        <span id="indexFooterLabel" class="index-footer-label"></span>
+        <span id="indexFooterCount" class="index-footer-count"></span>
+      </div>
+      <div id="indexFooterTrack" class="index-footer-track" role="progressbar" aria-label="Indexing Manemarks" aria-valuemin="0" aria-valuemax="100">
+        <div id="indexFooterFill" class="index-footer-fill"></div>
+      </div>
+      <div id="indexFooterDetail" class="index-footer-detail"></div>
+    </div>
 
   </div>
 

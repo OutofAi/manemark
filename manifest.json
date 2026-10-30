@@ -1,15 +1,16 @@
 {
   "manifest_version": 3,
   "name": "Manemark",
-  "version": "1.0.4",
-  "description": "Manemark a page to capture the text content of any webpage and prepares it for use as LLM context",
+  "version": "1.2.2",
+  "description": "Save page text and highlights, then search saved Manemarks locally using MiniLM semantic embeddings.",
   "action": {
     "default_icon": "assets/icon.png",
     "default_popup": "popup.html",
     "default_title": "Manemark - Capture page text"
   },
   "icons": {
-    "128": "assets/icon.png"
+    "48": "assets/icon.png",
+    "128": "assets/icon128.png"
   },
   "background": {
     "service_worker": "background.js"
@@ -18,6 +19,10 @@
     "storage",
     "activeTab",
     "scripting",
-    "clipboardWrite"
-  ]
+    "contextMenus",
+    "offscreen"
+  ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'; worker-src 'self';"
+  }
 }

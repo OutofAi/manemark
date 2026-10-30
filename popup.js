@@ -13,12 +13,23 @@ const clearAllBtn = document.getElementById('clearAllBtn');
 
 const importFile = document.getElementById('importFile');
 const snapshotsList = document.getElementById('snapshotsList');
+const searchInput = document.getElementById('searchInput');
+const searchResultCount = document.getElementById('searchResultCount');
+const semanticStatus = document.getElementById('semanticStatus');
+const indexFooter = document.getElementById('indexFooter');
+const indexFooterLabel = document.getElementById('indexFooterLabel');
+const indexFooterCount = document.getElementById('indexFooterCount');
+const indexFooterDetail = document.getElementById('indexFooterDetail');
+const indexFooterTrack = document.getElementById('indexFooterTrack');
+const indexFooterFill = document.getElementById('indexFooterFill');
+const noResultsState = document.getElementById('noResultsState');
 const emptyState = document.getElementById('emptyState');
 const statsContainer = document.getElementById('statsContainer');
 const snapText = document.getElementById('snapText');
 
 let currentTab = null;
 let currentSnapshot = null;
+let savedSnapshots = [];
 
 function normalizeUrl(url) {
   try {
@@ -63,7 +74,7 @@ async function refreshCurrentPageState() {
   const activeUrl = normalizeUrl(currentTab.url);
 
   currentSnapshot =
-    snapshots.find(s => normalizeUrl(s.url) === activeUrl) || null;
+    snapshots.find(s => s.type !== 'highlight' && normalizeUrl(s.url) === activeUrl) || null;
 
   setSnapButtonState(Boolean(currentSnapshot));
   renderSnapshots(snapshots);
@@ -77,14 +88,17 @@ async function refreshCurrentPageState() {
       const scroller = document.querySelector('.content');
 
       if (scroller) {
-        const itemTop = activeItem.offsetTop;
-        const itemBottom = itemTop + activeItem.offsetHeight;
+        const scrollerRect = scroller.getBoundingClientRect();
+        const itemRect = activeItem.getBoundingClientRect();
+        const itemTop =
+          itemRect.top - scrollerRect.top - scroller.clientTop + scroller.scrollTop;
+        const itemBottom = itemTop + itemRect.height;
         const viewTop = scroller.scrollTop;
         const viewBottom = viewTop + scroller.clientHeight;
 
         if (itemTop < viewTop || itemBottom > viewBottom) {
           const targetScrollTop =
-            itemTop - (scroller.clientHeight / 2) + (activeItem.offsetHeight / 2);
+            itemTop - (scroller.clientHeight / 2) + (itemRect.height / 2);
 
           scroller.scrollTop = Math.max(0, targetScrollTop);
         }
@@ -119,6 +133,9 @@ function setSnapButtonState(isSaved) {
 // Load snapshots when popup opens
 loadSnapshots();
 refreshCurrentPageState();
+
+// Semantic search runs locally in a dedicated worker, never on a remote server.
+searchInput.addEventListener('input', scheduleSemanticSearch);
 
 // Event listeners
 snapBtn.addEventListener('click', async () => {
@@ -185,11 +202,19 @@ importFile.addEventListener('change', handleImport);
 document.addEventListener('click', (e) => {
   const copyBtn = e.target.closest('.btn-copy');
   const deleteBtn = e.target.closest('.btn-delete');
+  const copyLinkBtn = e.target.closest('.btn-copy-link');
 
   if (copyBtn) {
     const snapshotId = parseInt(copyBtn.getAttribute('data-id'), 10);
     if (!Number.isNaN(snapshotId)) {
       copyToClipboard(snapshotId);
+    }
+  }
+
+  if (copyLinkBtn) {
+    const snapshotId = parseInt(copyLinkBtn.getAttribute('data-id'), 10);
+    if (!Number.isNaN(snapshotId)) {
+      copyLinkToClipboard(snapshotId);
     }
   }
 
@@ -408,15 +433,11 @@ function loadSnapshots() {
   chrome.runtime.sendMessage(
     { action: 'getSnapshots' },
     (response) => {
-      const snapshots = response.snapshots || [];
-
+      const snapshots = response?.snapshots || [];
+      renderSnapshots(snapshots);
       if (snapshots.length === 0) {
-        snapshotsList.innerHTML = '';
-        emptyState.style.display = 'flex';
         statsContainer.innerHTML = '';
       } else {
-        emptyState.style.display = 'none';
-        renderSnapshots(snapshots);
         renderStats(snapshots);
       }
     }
@@ -424,36 +445,213 @@ function loadSnapshots() {
 }
 
 /**
- * Render snapshots in the UI
+ * MiniLM-powered search: a background offscreen worker maintains the document
+ * index; this popup worker only embeds the query and ranks cached vectors.
+ * Keyword matching is intentionally not used as a hidden fallback.
  */
+let semanticWorker;
+let semanticTimer;
+let semanticSequence = 0;
+let semanticMatches = null;
+
+function setSemanticStatus(message = '', isError = false) {
+  semanticStatus.textContent = message;
+  semanticStatus.classList.toggle('visible', Boolean(message));
+  semanticStatus.classList.toggle('error', isError);
+}
+
+function getSemanticWorker() {
+  if (semanticWorker) return semanticWorker;
+  semanticWorker = new Worker(chrome.runtime.getURL('semantic-worker.js'), { type: 'module' });
+  semanticWorker.onmessage = ({ data }) => {
+    if (data.id !== semanticSequence || !searchInput.value.trim()) return;
+    if (data.type === 'progress') {
+      setSemanticStatus(data.message);
+    } else if (data.type === 'results') {
+      semanticMatches = data.ranked;
+      if (data.pending) {
+        setSemanticStatus(`${data.total - data.pending} of ${data.total} indexed · preparing the rest in the background`);
+      } else {
+        setSemanticStatus('Results ranked by semantic similarity · processed locally');
+      }
+      drawSnapshots();
+    } else if (data.type === 'error') {
+      semanticMatches = null;
+      setSemanticStatus('Semantic search unavailable: ' + data.message, true);
+      drawSnapshots();
+    }
+  };
+  semanticWorker.onerror = (event) => {
+    semanticMatches = null;
+    setSemanticStatus('Could not load the local semantic-search runtime. Run the setup steps in SETUP_MINILM.md.', true);
+    drawSnapshots();
+    console.error('MiniLM worker error:', event.message);
+    semanticWorker.terminate();
+    semanticWorker = null;
+  };
+  return semanticWorker;
+}
+
+function scheduleSemanticSearch() {
+  clearTimeout(semanticTimer);
+  const query = searchInput.value.trim();
+  semanticSequence++;
+  semanticMatches = null;
+  if (!query || !savedSnapshots.length) {
+    setSemanticStatus();
+    drawSnapshots();
+    return;
+  }
+  setSemanticStatus('Searching cached Manemarks…');
+  drawSnapshots();
+  const id = semanticSequence;
+  semanticTimer = setTimeout(() => {
+    try {
+      getSemanticWorker().postMessage({
+        type: 'search',
+        id,
+        query,
+        snapshots: savedSnapshots.map(({ id, title, url, text }) => ({ id, title, url, text }))
+      });
+    } catch (error) {
+      setSemanticStatus('Semantic search unavailable: ' + error.message, true);
+    }
+  }, 350);
+}
+
+// Index progress is shown only while work is pending (or when it fails).
+// The footer has a constant height while active, even between documents.
+let lastIndexSequence = -1;
+function renderIndexFooter(status) {
+  if (!status || !['idle', 'checking', 'indexing', 'complete', 'error'].includes(status.phase)) return;
+  if (!Number.isFinite(status.sequence) || status.sequence < lastIndexSequence) return;
+  lastIndexSequence = status.sequence;
+
+  // 100% means the index worker has finished. Hide the footer entirely;
+  // a later save/import will show it again when a new batch starts.
+  if (status.phase === 'complete' || status.phase === 'idle') {
+    indexFooter.hidden = true;
+    return;
+  }
+
+  const total = Math.max(0, Number(status.total) || 0);
+  const indexed = Math.max(0, Math.min(total, Number(status.indexed) || 0));
+  const chunkTotal = Math.max(0, Number(status.chunksTotal) || 0);
+  const chunksDone = Math.max(0, Math.min(chunkTotal, Number(status.chunksDone) || 0));
+  const progress = total ? 100 * (indexed + (chunkTotal ? chunksDone / chunkTotal : 0)) / total : 0;
+  // Do not display 100% until the worker reports completion and is idle.
+  const percent = Math.max(0, Math.min(99, Math.floor(progress)));
+
+  indexFooter.hidden = false;
+  indexFooter.classList.remove('checking', 'indexing', 'complete', 'error');
+  indexFooter.classList.add(status.phase);
+  indexFooterFill.style.width = status.phase === 'checking' ? '35%' : `${percent}%`;
+  indexFooterTrack.setAttribute('aria-valuenow', String(percent));
+  indexFooterTrack.setAttribute('aria-valuetext', status.phase === 'checking'
+    ? 'Checking cached Manemarks' : `${indexed} of ${total} Manemarks indexed`);
+
+  if (status.phase === 'checking') {
+    indexFooterLabel.textContent = 'Checking local search index…';
+    indexFooterCount.textContent = `${total} Manemarks`;
+    indexFooterDetail.textContent = '';
+  } else if (status.phase === 'indexing') {
+    indexFooterLabel.textContent = 'Indexing in background';
+    indexFooterCount.textContent = `${indexed} / ${total} · ${percent}%`;
+    indexFooterDetail.textContent = status.stage === 'loading-model'
+      ? 'Loading local AI model…'
+      : chunkTotal && indexed < total
+        ? `Manemark ${indexed + 1} · chunk ${chunksDone} of ${chunkTotal}`
+        : '';
+  } else {
+    indexFooterLabel.textContent = 'Background indexing paused';
+    indexFooterCount.textContent = `${indexed} / ${total}`;
+    indexFooterDetail.textContent = status.message || 'Indexing failed; reopen the popup to retry.';
+    indexFooterDetail.title = indexFooterDetail.textContent;
+  }
+  if (status.phase !== 'error') indexFooterDetail.removeAttribute('title');
+}
+
+// A hidden worker reports progress while this popup is open. On reopening,
+// ensureSemanticIndex also returns the current status from the offscreen page.
+chrome.runtime.onMessage.addListener(message => {
+  if (!['semanticIndexProgress', 'semanticIndexComplete', 'semanticIndexError'].includes(message.action)) return;
+  renderIndexFooter(message.status);
+  if (message.action === 'semanticIndexComplete' && searchInput.value.trim()) {
+    scheduleSemanticSearch();
+  }
+});
+
+chrome.runtime.sendMessage({ action: 'ensureSemanticIndex' })
+  .then(response => {
+    if (!response?.success) throw new Error(response?.message || 'Index service not available');
+    renderIndexFooter(response.status);
+  })
+  .catch(error => {
+    console.error('Manemark: cannot read background index status:', error);
+    // Do not overwrite a newer state that arrived in a live progress message.
+    if (lastIndexSequence < 0) {
+      renderIndexFooter({ phase: 'error', indexed: 0, total: savedSnapshots.length,
+        sequence: 0, message: 'Could not start background indexing: ' + error.message });
+    }
+  });
+
+/** Refresh list after captures, deletes, imports and tab state updates. */
 function renderSnapshots(snapshots) {
+  savedSnapshots = snapshots;
+  scheduleSemanticSearch();
+}
+
+function drawSnapshots() {
+  const query = searchInput.value.trim();
+  const isSearching = Boolean(query);
+  let visibleSnapshots = savedSnapshots;
+  if (isSearching) {
+    const map = new Map(savedSnapshots.map(snapshot => [String(snapshot.id), snapshot]));
+    visibleSnapshots = semanticMatches
+      ? semanticMatches.map(row => map.get(String(row.id))).filter(Boolean)
+      : [];
+  }
   const activeUrl = normalizeUrl(currentTab?.url || '');
 
-  snapshotsList.innerHTML = snapshots
+  emptyState.style.display = savedSnapshots.length === 0 ? 'flex' : 'none';
+  noResultsState.style.display = isSearching && semanticMatches && visibleSnapshots.length === 0 ? 'flex' : 'none';
+  searchResultCount.textContent = isSearching && semanticMatches
+    ? `${visibleSnapshots.length} of ${savedSnapshots.length} Manemarks`
+    : '';
+
+  snapshotsList.innerHTML = visibleSnapshots
     .map(snapshot => {
-      const isActive = normalizeUrl(snapshot.url) === activeUrl;
+      const isActive = snapshot.type === 'highlight'
+        ? snapshot.url === currentTab?.url
+        : normalizeUrl(snapshot.url) === activeUrl;
 
       return `
         <div
           class="snapshot-item ${isActive ? 'snapshot-item-active' : ''}"
-          data-snapshot-id="${snapshot.id}"
+          data-snapshot-id="${escapeHtml(snapshot.id)}"
         >
           <div class="snapshot-header">
-            <div class="snapshot-title">${escapeHtml(snapshot.title)}</div>
+            <div class="snapshot-title">${escapeHtml(snapshot.title)}${snapshot.type === 'highlight' ? ' <span class="snapshot-kind">Highlight</span>' : ''}</div>
             <div class="snapshot-time">${formatTime(snapshot.timestamp)}</div>
           </div>
-          <a href="${escapeHtml(snapshot.url)}" target="_blank" class="snapshot-url" title="${escapeHtml(snapshot.url)}">
+          <a href="${escapeHtml(safeManemarkUrl(snapshot.url))}" target="_blank" rel="noopener noreferrer" class="snapshot-url" title="${escapeHtml(snapshot.url)}">
             ${escapeHtml(snapshot.url.substring(0, 60))}${snapshot.url.length > 60 ? '...' : ''}
           </a>
           <div class="snapshot-preview">${escapeHtml(snapshot.textPreview)}</div>
           <div class="snapshot-actions">
-            <button class="btn-small btn-copy" data-id="${snapshot.id}" aria-label="Copy">
+            ${snapshot.type === 'highlight' ? `<button class="btn-small btn-copy-link" data-id="${escapeHtml(snapshot.id)}" aria-label="Copy highlight link" title="Copy highlight link">
+              <svg class="btn-icon-item" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M10 13a5 5 0 0 0 7 .5l3-3a5 5 0 0 0-7-7l-1.7 1.7" />
+                <path d="M14 11a5 5 0 0 0-7-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7" />
+              </svg>
+            </button>` : ''}
+            <button class="btn-small btn-copy" data-id="${escapeHtml(snapshot.id)}" aria-label="Copy">
               <svg class="btn-icon-item" viewBox="-0.5 -0.5 16 16" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" width="16" height="16">
                 <path d="M6.875 5.625h5.625s1.25 0 1.25 1.25v5.625s0 1.25 -1.25 1.25h-5.625s-1.25 0 -1.25 -1.25v-5.625s0 -1.25 1.25 -1.25" stroke-width="1"></path>
                 <path d="M3.125 9.375H2.5a1.25 1.25 0 0 1 -1.25 -1.25V2.5a1.25 1.25 0 0 1 1.25 -1.25h5.625a1.25 1.25 0 0 1 1.25 1.25v0.625" stroke-width="1"></path>
               </svg>
             </button>
-            <button class="btn-small btn-delete" data-id="${snapshot.id}" aria-label="Delete">
+            <button class="btn-small btn-delete" data-id="${escapeHtml(snapshot.id)}" aria-label="Delete">
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="-0.5 -0.5 16 16" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" class="feather feather-trash-2" id="Trash-2--Streamline-Feather" height="16" width="16">
                 <path d="m1.875 3.75 1.25 0 10 0" stroke-width="1"></path>
                 <path d="M11.875 3.75v8.75a1.25 1.25 0 0 1 -1.25 1.25H4.375a1.25 1.25 0 0 1 -1.25 -1.25V3.75m1.875 0V2.5a1.25 1.25 0 0 1 1.25 -1.25h2.5a1.25 1.25 0 0 1 1.25 1.25v1.25" stroke-width="1"></path>
@@ -511,6 +709,23 @@ function copyToClipboard(id) {
       }
     }
   );
+}
+
+/**
+ * Copy a saved highlight's direct URL, rather than its selected text.
+ */
+function copyLinkToClipboard(id) {
+  const snapshot = savedSnapshots.find(s => s.id === id && s.type === 'highlight');
+  if (!snapshot?.url) {
+    showToast('✗ Highlight link not found', 'error');
+    return;
+  }
+
+  navigator.clipboard.writeText(snapshot.url).then(() => {
+    showToast('✓ Highlight link copied!');
+  }).catch(() => {
+    showToast('✗ Failed to copy highlight link', 'error');
+  });
 }
 
 /**
@@ -770,6 +985,16 @@ function formatBytes(bytes) {
   const sizes = ['B', 'KB', 'MB'];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
   return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
+}
+
+/** Only open normal web links from imported Manemarks. */
+function safeManemarkUrl(url) {
+  try {
+    const parsed = new URL(String(url));
+    return ['http:', 'https:'].includes(parsed.protocol) ? parsed.href : '#';
+  } catch {
+    return '#';
+  }
 }
 
 /**
