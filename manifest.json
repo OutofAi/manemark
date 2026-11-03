@@ -1,12 +1,12 @@
 {
   "manifest_version": 3,
   "name": "Manemark",
-  "version": "1.2.2",
-  "description": "Save page text and highlights, then search saved Manemarks locally using MiniLM semantic embeddings.",
+  "version": "1.2.8",
+  "description": "Save AI-extracted article text or raw webpage HTML locally; search saved Manemarks with MiniLM.",
   "action": {
     "default_icon": "assets/icon.png",
     "default_popup": "popup.html",
-    "default_title": "Manemark - Capture page text"
+    "default_title": "Manemark - Save article content"
   },
   "icons": {
     "48": "assets/icon.png",

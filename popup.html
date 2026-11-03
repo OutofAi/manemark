@@ -151,6 +151,14 @@
       color: #9ca3af;
     }
 
+    .snapshot-similarity {
+      display: block;
+      margin-top: 2px;
+      font-size: 10px;
+      font-weight: 600;
+      color: #783393;
+    }
+
     .search-results-count {
       margin-top: 6px;
       font-size: 11px;
@@ -465,8 +473,18 @@
       cursor: pointer;
     }
 
-    .dropdown-item:hover {
+    .dropdown-item:hover:not(:disabled) {
       background: #DB3F78;
+    }
+
+    /* A button's display:inline-flex must not override the HTML hidden flag. */
+    .dropdown-item[hidden] {
+      display: none;
+    }
+
+    .dropdown-item:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
     }
     
     .snapshot-actions {
@@ -558,18 +576,64 @@
       }
     }
 
-    .stats {
-      background: #ffffff;
-      color: #9ca3af;
+    /* A permanent footer keeps the library summary on the left and settings on the right. */
+    .library-footer {
+      display: flex;
       align-items: center;
-      text-align: center;
-      padding: 10px 25px;
-      font-size: 13px;
+      flex-shrink: 0;
+      min-height: 48px;
+      padding: 4px 14px 4px 20px;
+      border-top: 1px solid #e9dff0;
+      background: #ffffff;
+      gap: 8px;
     }
+    .footer-text { min-width: 0; flex: 1; text-align: left; }
+    .stats {
+      color: #777083;
+      text-align: left;
+      font-size: 12px;
+      line-height: 1.4;
+    }
+    .stats strong { font-weight: 600; }
+    .settings-button {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      height: 34px;
+      width: 34px;
+      padding: 6px;
+      background: transparent;
+      border-radius: 8px;
+    }
+    .settings-button:hover, .settings-button[aria-pressed="true"] { background: #f1e7f5; }
+    .settings-button:focus-visible, .back-button:focus-visible, .setting-check:focus-visible {
+      outline: 2px solid #783393;
+      outline-offset: 2px;
+    }
+    .settings-button img { width: 20px; height: 20px; opacity: 0.8; }
 
-    .stats strong {
-      font-weight: 600;
+    /* Settings replaces the list view without leaving the extension popup. */
+    .main-view { display: flex; flex: 1; flex-direction: column; min-height: 0; }
+    .settings-view {
+      flex: 1;
+      min-height: 0;
+      overflow-y: auto;
+      padding: 22px 20px;
     }
+    .main-view[hidden], .settings-view[hidden] { display: none; }
+    .container.settings-open .controls { visibility: hidden; }
+    .settings-heading { display: flex; align-items: center; gap: 10px; margin-bottom: 20px; }
+    .settings-heading h2 { font-size: 19px; font-weight: 650; color: #4a205b; }
+    .back-button { background: #f3eaf7; color: #783393; font-size: 12px; padding: 7px 10px; }
+    .back-button:hover { background: #e8d9f0; }
+    .settings-section { border: 1px solid #e9dff0; border-radius: 10px; padding: 16px; }
+    .setting-option { display: flex; align-items: flex-start; gap: 10px; cursor: pointer; }
+    .setting-check { margin-top: 2px; width: 17px; height: 17px; accent-color: #783393; flex-shrink: 0; }
+    .setting-name { display: block; font-size: 14px; font-weight: 600; line-height: 1.4; }
+    .setting-description { font-size: 12px; line-height: 1.6; color: #76687d; margin: 9px 0 0 27px; }
+    .settings-feedback { margin: 10px 0 0 27px; color: #b33e3e; font-size: 12px; }
+    .settings-feedback:empty { display: none; }
 
     .storage-info {
       background: #f3f4f6;
@@ -783,6 +847,8 @@
         color: #e5e5e5;
       }
 
+      .snapshot-similarity { color: #c084fc; }
+
       .search-results-count,
       .no-results-state {
         color: #a3a3a3;
@@ -836,10 +902,15 @@
         border-color: #2f2f2f;
       }
 
-      .stats {
-        background: #111111;
-        color: #a3a3a3;
-      }
+      .library-footer { background: #171717; border-color: #39303e; }
+      .stats { color: #a3a3a3; }
+      .settings-button img { filter: invert(1); }
+      .settings-button:hover, .settings-button[aria-pressed="true"] { background: #362a40; }
+      .settings-heading h2 { color: #ead7f2; }
+      .back-button { color: #e4c6ef; background: #362a40; }
+      .back-button:hover { background: #4b3a57; }
+      .settings-section { border-color: #39303e; }
+      .setting-description { color: #ae9eb7; }
       .index-footer {
         background: #211b27;
         border-color: #39303e;
@@ -892,7 +963,8 @@
       </div>
     </div>
 
-    <div class="top-actions">
+    <div id="mainView" class="main-view">
+      <div class="top-actions">
       <div class="dropdown">
         <button class="btn-small top-action-btn dropdown-toggle" id="exportMenuBtn">
           Export ▾
@@ -900,6 +972,7 @@
         <div class="dropdown-menu" id="exportMenu">
           <button class="dropdown-item" id="exportJsonBtn">JSON</button>
           <button class="dropdown-item" id="exportZipBtn">ZIP</button>
+          <button class="dropdown-item" id="exportSearchBtn" hidden disabled title="Export only matching search results as JSON">SEARCH</button>
         </div>
       </div>
 
@@ -926,7 +999,7 @@
       <div id="snapshotsList"></div>
       <div id="noResultsState" class="no-results-state">
         <strong>No matching Manemarks</strong>
-        <p>Try a different question or clear the search.</p>
+        <p id="noResultsDescription">Try a different question or clear the search.</p>
       </div>
       <div id="emptyState" class="empty-state">
         <div class="empty-icon"><img src="assets/sleepy_mane.png" alt="" class="sleepy-icon"></div>
@@ -936,18 +1009,41 @@
       </div>
 
     </div>
-    <div id="statsContainer"></div>
-    <div id="indexFooter" class="index-footer" role="status" aria-live="polite" aria-label="Background search indexing" hidden>
-      <div class="index-footer-top">
-        <span id="indexFooterLabel" class="index-footer-label"></span>
-        <span id="indexFooterCount" class="index-footer-count"></span>
+      <div id="indexFooter" class="index-footer" role="status" aria-live="polite" aria-label="Background search indexing" hidden>
+        <div class="index-footer-top">
+          <span id="indexFooterLabel" class="index-footer-label"></span>
+          <span id="indexFooterCount" class="index-footer-count"></span>
+        </div>
+        <div id="indexFooterTrack" class="index-footer-track" role="progressbar" aria-label="Indexing Manemarks" aria-valuemin="0" aria-valuemax="100">
+          <div id="indexFooterFill" class="index-footer-fill"></div>
+        </div>
+        <div id="indexFooterDetail" class="index-footer-detail"></div>
       </div>
-      <div id="indexFooterTrack" class="index-footer-track" role="progressbar" aria-label="Indexing Manemarks" aria-valuemin="0" aria-valuemax="100">
-        <div id="indexFooterFill" class="index-footer-fill"></div>
-      </div>
-      <div id="indexFooterDetail" class="index-footer-detail"></div>
     </div>
 
+    <section id="settingsView" class="settings-view" aria-labelledby="settingsTitle" hidden>
+      <div class="settings-heading">
+        <button type="button" id="backToLibraryBtn" class="back-button" aria-label="Back to Manemarks">← Back</button>
+        <h2 id="settingsTitle">Settings</h2>
+      </div>
+      <div class="settings-section">
+        <label class="setting-option" for="aiExtractionCheckbox">
+          <input type="checkbox" id="aiExtractionCheckbox" class="setting-check" checked disabled>
+          <span class="setting-name">AI content extraction</span>
+        </label>
+        <p class="setting-description">On (default): use local AI to save and copy the main page content only. Off: save and copy the raw webpage HTML, including its tags, without filtering.</p>
+        <p id="settingsFeedback" class="settings-feedback" role="alert"></p>
+      </div>
+    </section>
+
+    <footer class="library-footer">
+      <div id="statsContainer" class="footer-text" aria-label="Manemark library statistics">
+        <div class="stats"><strong>0</strong> manemarks</div>
+      </div>
+      <button type="button" id="settingsBtn" class="settings-button" aria-label="Open settings" aria-controls="settingsView" aria-pressed="false" title="Settings">
+        <img src="assets/cog.svg" alt="">
+      </button>
+    </footer>
   </div>
 
   <!-- Token Limit Modal -->

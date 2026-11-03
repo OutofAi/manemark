@@ -8,12 +8,91 @@ const exportMenuBtn = document.getElementById('exportMenuBtn');
 const exportMenu = document.getElementById('exportMenu');
 const exportZipBtn = document.getElementById('exportZipBtn');
 const exportJsonBtn = document.getElementById('exportJsonBtn');
+const exportSearchBtn = document.getElementById('exportSearchBtn');
 const importBtn = document.getElementById('importBtn');
 const clearAllBtn = document.getElementById('clearAllBtn');
+const mainView = document.getElementById('mainView');
+const settingsView = document.getElementById('settingsView');
+const settingsBtn = document.getElementById('settingsBtn');
+const backToLibraryBtn = document.getElementById('backToLibraryBtn');
+const aiExtractionCheckbox = document.getElementById('aiExtractionCheckbox');
+const settingsFeedback = document.getElementById('settingsFeedback');
+
+// Store the user's capture preference in Chrome's persistent extension storage.
+// Absent keys (including existing installations) default to AI extraction ON.
+const AI_EXTRACTION_STORAGE_KEY = 'aiExtractionEnabled';
+let aiExtractionEnabled = true;
+const extractionPreferenceReady = chrome.storage.local.get({ [AI_EXTRACTION_STORAGE_KEY]: true })
+  .then(result => {
+    aiExtractionEnabled = result[AI_EXTRACTION_STORAGE_KEY] !== false;
+    aiExtractionCheckbox.checked = aiExtractionEnabled;
+  })
+  .catch(error => {
+    console.warn('Manemark: could not read AI extraction setting:', error);
+    settingsFeedback.textContent = 'Could not read saved settings; using AI extraction.';
+  })
+  .finally(() => { aiExtractionCheckbox.disabled = false; });
+
+function showSettings(show) {
+  mainView.hidden = show;
+  settingsView.hidden = !show;
+  document.querySelector('.container').classList.toggle('settings-open', show);
+  settingsBtn.setAttribute('aria-pressed', String(show));
+  settingsBtn.setAttribute('aria-label', show ? 'Close settings' : 'Open settings');
+  settingsBtn.title = show ? 'Back to Manemarks' : 'Settings';
+  if (show) aiExtractionCheckbox.focus();
+  else settingsBtn.focus();
+}
+
+settingsBtn.addEventListener('click', () => showSettings(settingsView.hidden));
+backToLibraryBtn.addEventListener('click', () => showSettings(false));
+aiExtractionCheckbox.addEventListener('change', async () => {
+  await extractionPreferenceReady;
+  const previous = aiExtractionEnabled;
+  const next = aiExtractionCheckbox.checked;
+  aiExtractionEnabled = next;
+  settingsFeedback.textContent = '';
+  try {
+    await chrome.storage.local.set({ [AI_EXTRACTION_STORAGE_KEY]: next });
+  } catch (error) {
+    aiExtractionEnabled = previous;
+    aiExtractionCheckbox.checked = previous;
+    settingsFeedback.textContent = 'Could not save the setting. Please try again.';
+    console.error('Manemark: could not save AI extraction setting:', error);
+  }
+});
 
 const importFile = document.getElementById('importFile');
 const snapshotsList = document.getElementById('snapshotsList');
 const searchInput = document.getElementById('searchInput');
+// A Chrome action popup is destroyed when a link is opened. Keep the query
+// in persistent extension-origin storage so it survives popup recreation.
+const SEARCH_QUERY_STORAGE_KEY = 'manemark.popup.searchQuery';
+
+function restoreSearchQuery() {
+  try {
+    searchInput.value = window.localStorage.getItem(SEARCH_QUERY_STORAGE_KEY) || '';
+  } catch (error) {
+    console.warn('Manemark: unable to restore the search query:', error);
+  }
+}
+
+function persistSearchQuery() {
+  try {
+    // This is synchronous, so clicking a result cannot close the popup before
+    // its latest query has been saved. An empty query clears the saved filter.
+    window.localStorage.setItem(SEARCH_QUERY_STORAGE_KEY, searchInput.value);
+  } catch (error) {
+    console.warn('Manemark: unable to save the search query:', error);
+  }
+}
+
+function handleSearchInput() {
+  persistSearchQuery();
+  scheduleSemanticSearch();
+}
+
+const noResultsDescription = document.getElementById('noResultsDescription');
 const searchResultCount = document.getElementById('searchResultCount');
 const semanticStatus = document.getElementById('semanticStatus');
 const indexFooter = document.getElementById('indexFooter');
@@ -30,6 +109,9 @@ const snapText = document.getElementById('snapText');
 let currentTab = null;
 let currentSnapshot = null;
 let savedSnapshots = [];
+// The search may finish after the current tab is detected. Keep the initial
+// auto-scroll pending until the active item actually exists in the rendered list.
+let activeScrollPending = true;
 
 function normalizeUrl(url) {
   try {
@@ -59,6 +141,40 @@ function getSnapshots() {
 }
 
 
+/** Find the item for the open tab without changing the page Save button state. */
+function getActiveManemark() {
+  if (currentSnapshot && savedSnapshots.some(s => String(s.id) === String(currentSnapshot.id))) {
+    return currentSnapshot;
+  }
+  // Exact fragment URLs can represent a saved text highlight, rather than a
+  // full-page Manemark (which currentSnapshot intentionally excludes).
+  return savedSnapshots.find(s => s.type === 'highlight' && s.url === currentTab?.url) || null;
+}
+
+/** Once per popup opening, centre the open page in the scrollable results. */
+function scrollToActiveManemark() {
+  if (!activeScrollPending) return;
+  const activeSnapshot = getActiveManemark();
+  if (!activeSnapshot) return;
+  const activeItem = Array.from(snapshotsList.querySelectorAll('.snapshot-item-active'))
+    .find(item => item.dataset.snapshotId === String(activeSnapshot.id));
+  if (!activeItem) return; // The restored search may still be running.
+
+  const scroller = document.querySelector('.content');
+  if (!scroller) return;
+  const scrollerRect = scroller.getBoundingClientRect();
+  const itemRect = activeItem.getBoundingClientRect();
+  const itemTop = itemRect.top - scrollerRect.top - scroller.clientTop + scroller.scrollTop;
+  const itemBottom = itemTop + itemRect.height;
+  const viewTop = scroller.scrollTop;
+  const viewBottom = viewTop + scroller.clientHeight;
+  if (itemTop < viewTop || itemBottom > viewBottom) {
+    scroller.scrollTop = Math.max(0,
+      itemTop - scroller.clientHeight / 2 + itemRect.height / 2);
+  }
+  activeScrollPending = false; // Don't jump again during later search updates.
+}
+
 async function refreshCurrentPageState() {
   currentTab = await getActiveTab();
 
@@ -73,38 +189,17 @@ async function refreshCurrentPageState() {
   const snapshots = await getSnapshots();
   const activeUrl = normalizeUrl(currentTab.url);
 
+  const previousSnapshotId = currentSnapshot?.id;
   currentSnapshot =
     snapshots.find(s => s.type !== 'highlight' && normalizeUrl(s.url) === activeUrl) || null;
+  if (currentSnapshot?.id !== previousSnapshotId) activeScrollPending = true;
 
   setSnapButtonState(Boolean(currentSnapshot));
   renderSnapshots(snapshots);
 
-  if (currentSnapshot) {
-    const activeItem = snapshotsList.querySelector(
-      `[data-snapshot-id="${currentSnapshot.id}"]`
-    );
-
-    if (activeItem) {
-      const scroller = document.querySelector('.content');
-
-      if (scroller) {
-        const scrollerRect = scroller.getBoundingClientRect();
-        const itemRect = activeItem.getBoundingClientRect();
-        const itemTop =
-          itemRect.top - scrollerRect.top - scroller.clientTop + scroller.scrollTop;
-        const itemBottom = itemTop + itemRect.height;
-        const viewTop = scroller.scrollTop;
-        const viewBottom = viewTop + scroller.clientHeight;
-
-        if (itemTop < viewTop || itemBottom > viewBottom) {
-          const targetScrollTop =
-            itemTop - (scroller.clientHeight / 2) + (itemRect.height / 2);
-
-          scroller.scrollTop = Math.max(0, targetScrollTop);
-        }
-      }
-    }
-  }
+  // With a restored search, the active Manemark can only be drawn after the
+  // semantic worker replies. drawSnapshots() will finish the pending scroll.
+  scrollToActiveManemark();
 
   revealSnapButton();
   document.querySelector('.controls')?.classList.add('ready');
@@ -130,12 +225,18 @@ function setSnapButtonState(isSaved) {
   }
 }
 
-// Load snapshots when popup opens
+// Restore the previous query before the first snapshots are rendered.
+// loadSnapshots() then runs semantic search against the restored text.
+restoreSearchQuery();
 loadSnapshots();
 refreshCurrentPageState();
 
 // Semantic search runs locally in a dedicated worker, never on a remote server.
-searchInput.addEventListener('input', scheduleSemanticSearch);
+searchInput.addEventListener('input', handleSearchInput);
+
+// Fixed minimum cosine similarity for search results (20%).
+// Scores below 0.20 are excluded; this is not a confidence probability.
+const MINIMUM_SEMANTIC_SIMILARITY = 0.20;
 
 // Event listeners
 snapBtn.addEventListener('click', async () => {
@@ -156,33 +257,10 @@ snapBtn.addEventListener('click', async () => {
     captureCurrentPageText();
   }
 });
-// Copy text from the active webpage directly to the clipboard, without storing a snapshot.
-copyPageBtn.addEventListener('click', async () => {
-  copyPageBtn.disabled = true;
-  try {
-    const tab = await getActiveTab();
-    if (!tab?.id) throw new Error('No active tab found');
-
-    await chrome.scripting.executeScript({
-      target: { tabId: tab.id },
-      files: ['content.js']
-    });
-
-    const response = await new Promise((resolve, reject) => {
-      chrome.tabs.sendMessage(tab.id, { action: 'copyPageText' }, (result) => {
-        if (chrome.runtime.lastError) reject(new Error(chrome.runtime.lastError.message));
-        else resolve(result);
-      });
-    });
-
-    if (!response?.success) throw new Error(response?.message || 'Failed to read page text');
-    await navigator.clipboard.writeText(response.text);
-    showToast('✓ Page text copied!');
-  } catch (error) {
-    showToast(`✗ ${error.message || 'Failed to copy page text'}`, 'error');
-  } finally {
-    copyPageBtn.disabled = false;
-  }
+// Copy the page using the selected capture mode, without saving a snapshot.
+// Completion arrives separately rather than holding a long message callback.
+copyPageBtn.addEventListener('click', () => {
+  void beginCaptureJob('copy');
 });
 
 exportZipBtn.addEventListener('click', () => {
@@ -193,6 +271,11 @@ exportZipBtn.addEventListener('click', () => {
 exportJsonBtn.addEventListener('click', () => {
   exportMenu.classList.remove('show');
   handleExportJson();
+});
+
+exportSearchBtn.addEventListener('click', () => {
+  exportMenu.classList.remove('show');
+  exportSearchSnapshotsAsJson();
 });
 importBtn.addEventListener('click', () => importFile.click());
 clearAllBtn.addEventListener('click', clearAllSnapshots);
@@ -228,6 +311,7 @@ document.addEventListener('click', (e) => {
 
 exportMenuBtn.addEventListener('click', (e) => {
   e.stopPropagation();
+  updateSearchExportOption();
   exportMenu.classList.toggle('show');
 });
 
@@ -372,59 +456,113 @@ function openStorageLocation() {
 }
 
 /**
- * Capture text from the current active tab
+ * Read the live DOM in a single, isolated-world script execution. Avoid the
+ * old content-script → background → offscreen nested sendMessage chain:
+ * Chrome can close any of those pending response channels during slow ONNX
+ * initialization, leaving only "message port closed" in the popup.
  */
-function captureCurrentPageText() {
-  snapBtn.classList.add('loading');
-  snapText.textContent = 'Capturing...';
-
-  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-    const tab = tabs[0];
-    if (!tab || !tab.id) {
-      snapBtn.classList.remove('loading');
-      snapText.textContent = 'Manemark';
-      showToast('✗ No active tab found', 'error');
-      return;
-    }
-
-    chrome.scripting.executeScript(
-      {
-        target: { tabId: tab.id },
-        files: ['content.js']
-      },
-      () => {
-        if (chrome.runtime.lastError) {
-          snapBtn.classList.remove('loading');
-          snapText.textContent = 'Manemark';
-          showToast(`✗ ${chrome.runtime.lastError.message}`, 'error');
-          return;
-        }
-
-        chrome.tabs.sendMessage(
-          tab.id,
-          { action: 'captureText' },
-          (response) => {
-            snapBtn.classList.remove('loading');
-            snapText.textContent = 'Manemarked';
-
-            if (chrome.runtime.lastError) {
-              showToast(`✗ ${chrome.runtime.lastError.message}`, 'error');
-              return;
-            }
-
-            if (response && response.success) {
-              showToast('✓ Text captured successfully!');
-              loadSnapshots();
-              refreshCurrentPageState();
-            } else {
-              showToast('✗ Failed to capture text', 'error');
-            }
-          }
-        );
+async function captureHtmlFromActiveTab() {
+  const tab = await getActiveTab();
+  if (!tab?.id) throw new Error('No active tab found.');
+  if (!/^https?:\/\//i.test(tab.url || '')) {
+    throw new Error('Open a normal http(s) webpage to extract its content.');
+  }
+  const [injection] = await chrome.scripting.executeScript({
+    target: { tabId: tab.id },
+    func: () => {
+      if (!document.documentElement || !document.body) {
+        throw new Error('The webpage has no HTML body.');
       }
-    );
+      const html = document.documentElement.outerHTML;
+      if (html.length > 8_000_000) {
+        throw new Error('The webpage is too large to capture (8 million characters).');
+      }
+      // The DOCTYPE is separate from documentElement.outerHTML in the DOM.
+      const doctype = document.doctype;
+      const prefix = doctype ? '<!DOCTYPE ' + doctype.name
+        + (doctype.publicId ? ' PUBLIC "' + doctype.publicId + '"' : '')
+        + (doctype.systemId ? ' "' + doctype.systemId + '"' : '') + '>\n' : '';
+      return { html, doctype: prefix, url: location.href, title: document.title || 'Untitled Page' };
+    }
   });
+  const page = injection?.result;
+  if (!page?.html) throw new Error('Unable to read the webpage HTML.');
+  return page;
 }
+
+const pendingHtmlsiftJobs = new Map();
+const captureModesInFlight = new Set();
+
+function setCaptureBusy(mode, busy, useAI) {
+  if (mode === 'save') {
+    snapBtn.disabled = busy;
+    if (busy) {
+      snapBtn.classList.add('loading');
+      snapText.textContent = useAI ? 'AI extracting...' : 'Saving HTML...';
+    } else {
+      snapBtn.classList.remove('loading');
+      if (!currentSnapshot) snapText.textContent = 'Manemark';
+    }
+  } else {
+    copyPageBtn.disabled = busy;
+  }
+}
+
+async function beginCaptureJob(mode) {
+  if (mode !== 'save' && mode !== 'copy') return;
+  if (captureModesInFlight.has(mode)) return;
+  captureModesInFlight.add(mode);
+  // Avoid racing the initial preferences load on popup creation.
+  await extractionPreferenceReady;
+  const useAI = aiExtractionEnabled;
+  setCaptureBusy(mode, true, useAI);
+  let jobId;
+  try {
+    const page = await captureHtmlFromActiveTab();
+    jobId = crypto.randomUUID();
+    pendingHtmlsiftJobs.set(jobId, { mode, useAI });
+    const accepted = await chrome.runtime.sendMessage({
+      action: 'startHtmlsiftJob', jobId, mode,
+      aiExtractionEnabled: useAI,
+      ...page
+    });
+    if (!accepted?.success) {
+      throw new Error(accepted?.message || 'Could not start page capture.');
+    }
+    // The offscreen page sends a completion event for both AI and raw HTML.
+  } catch (error) {
+    if (jobId) pendingHtmlsiftJobs.delete(jobId);
+    captureModesInFlight.delete(mode);
+    setCaptureBusy(mode, false, useAI);
+    showToast(`✗ ${error?.message || 'Could not capture the page.'}`, 'error');
+  }
+}
+
+function captureCurrentPageText() {
+  void beginCaptureJob('save');
+}
+
+chrome.runtime.onMessage.addListener(message => {
+  if (message?.action !== 'htmlsiftJobComplete') return;
+  const job = pendingHtmlsiftJobs.get(message.jobId);
+  if (!job) return;
+  pendingHtmlsiftJobs.delete(message.jobId);
+  captureModesInFlight.delete(job.mode);
+  setCaptureBusy(job.mode, false, job.useAI);
+  if (!message.success) {
+    showToast(`✗ ${message.message || 'Page capture failed.'}`, 'error');
+    return;
+  }
+  if (job.mode === 'save') {
+    showToast(job.useAI ? '✓ Main content saved!' : '✓ Raw HTML saved!');
+    loadSnapshots();
+    void refreshCurrentPageState();
+  } else {
+    void navigator.clipboard.writeText(message.text || '')
+      .then(() => showToast(job.useAI ? '✓ Main content copied!' : '✓ Raw HTML copied!'))
+      .catch(error => showToast(`✗ Clipboard access failed: ${error?.message || String(error)}`, 'error'));
+  }
+});
 
 /**
  * Load and display all snapshots
@@ -435,11 +573,7 @@ function loadSnapshots() {
     (response) => {
       const snapshots = response?.snapshots || [];
       renderSnapshots(snapshots);
-      if (snapshots.length === 0) {
-        statsContainer.innerHTML = '';
-      } else {
-        renderStats(snapshots);
-      }
+      renderStats(snapshots);
     }
   );
 }
@@ -601,26 +735,62 @@ function renderSnapshots(snapshots) {
   scheduleSemanticSearch();
 }
 
+/** The same qualifying, ranked semantic matches are used by display and export. */
+function getQualifiedSemanticMatches() {
+  return (semanticMatches || []).filter(row =>
+    Number.isFinite(row.score) && row.score >= MINIMUM_SEMANTIC_SIMILARITY
+  );
+}
+
+/** Null means no active query or that the search has not finished yet. */
+function getSearchResultSnapshots() {
+  if (!searchInput.value.trim() || !semanticMatches) return null;
+  const snapshotsById = new Map(savedSnapshots.map(snapshot => [String(snapshot.id), snapshot]));
+  return getQualifiedSemanticMatches()
+    .map(match => snapshotsById.get(String(match.id)))
+    .filter(Boolean);
+}
+
+function updateSearchExportOption() {
+  const isSearching = Boolean(searchInput.value.trim());
+  const results = getSearchResultSnapshots();
+  exportSearchBtn.hidden = !isSearching;
+  exportSearchBtn.disabled = !results || results.length === 0;
+  exportSearchBtn.title = !results ? 'Waiting for search results'
+    : results.length === 0 ? 'No matching Manemarks to export'
+    : `Export ${results.length} matching Manemark${results.length === 1 ? '' : 's'} as JSON`;
+}
+
 function drawSnapshots() {
   const query = searchInput.value.trim();
   const isSearching = Boolean(query);
-  let visibleSnapshots = savedSnapshots;
-  if (isSearching) {
-    const map = new Map(savedSnapshots.map(snapshot => [String(snapshot.id), snapshot]));
-    visibleSnapshots = semanticMatches
-      ? semanticMatches.map(row => map.get(String(row.id))).filter(Boolean)
-      : [];
-  }
+  const searchResults = getSearchResultSnapshots();
+  let visibleSnapshots = isSearching ? (searchResults || []) : savedSnapshots;
+  const filteredMatches = getQualifiedSemanticMatches();
+  const scoresById = new Map(filteredMatches.map(row => [String(row.id), row.score]));
+  updateSearchExportOption();
+  // The user may be viewing a Manemark that is not semantically related to
+  // an older saved query. Keep it available as "Current page", distinct from
+  // actual search matches, rather than hiding the orange active-page marker.
+  const matchingResultCount = visibleSnapshots.length;
+  const activeManemark = getActiveManemark();
+  const showCurrentPageSeparately = Boolean(isSearching && semanticMatches && activeManemark &&
+    !visibleSnapshots.some(s => String(s.id) === String(activeManemark.id)));
+  if (showCurrentPageSeparately) visibleSnapshots = [...visibleSnapshots, activeManemark];
+
+  noResultsDescription.textContent = 'Try a different question or clear the search.';
   const activeUrl = normalizeUrl(currentTab?.url || '');
 
   emptyState.style.display = savedSnapshots.length === 0 ? 'flex' : 'none';
   noResultsState.style.display = isSearching && semanticMatches && visibleSnapshots.length === 0 ? 'flex' : 'none';
   searchResultCount.textContent = isSearching && semanticMatches
-    ? `${visibleSnapshots.length} of ${savedSnapshots.length} Manemarks`
+    ? `${matchingResultCount} of ${savedSnapshots.length} Manemarks${showCurrentPageSeparately ? ' · current page also shown' : ''}`
     : '';
 
   snapshotsList.innerHTML = visibleSnapshots
     .map(snapshot => {
+      const similarityScore = isSearching ? scoresById.get(String(snapshot.id)) : undefined;
+      const isCurrentPageOnly = showCurrentPageSeparately && String(snapshot.id) === String(activeManemark.id);
       const isActive = snapshot.type === 'highlight'
         ? snapshot.url === currentTab?.url
         : normalizeUrl(snapshot.url) === activeUrl;
@@ -631,8 +801,8 @@ function drawSnapshots() {
           data-snapshot-id="${escapeHtml(snapshot.id)}"
         >
           <div class="snapshot-header">
-            <div class="snapshot-title">${escapeHtml(snapshot.title)}${snapshot.type === 'highlight' ? ' <span class="snapshot-kind">Highlight</span>' : ''}</div>
-            <div class="snapshot-time">${formatTime(snapshot.timestamp)}</div>
+            <div class="snapshot-title">${escapeHtml(snapshot.title)}${snapshot.type === 'highlight' ? ' <span class="snapshot-kind">Highlight</span>' : ''}${isCurrentPageOnly ? ' <span class="snapshot-kind">Current page</span>' : ''}</div>
+            <div class="snapshot-time">${formatTime(snapshot.timestamp)}${Number.isFinite(similarityScore) ? `<span class="snapshot-similarity" title="Cosine similarity score, not a probability">Similarity ${Math.round(similarityScore * 100)}%</span>` : ''}</div>
           </div>
           <a href="${escapeHtml(safeManemarkUrl(snapshot.url))}" target="_blank" rel="noopener noreferrer" class="snapshot-url" title="${escapeHtml(snapshot.url)}">
             ${escapeHtml(snapshot.url.substring(0, 60))}${snapshot.url.length > 60 ? '...' : ''}
@@ -664,6 +834,10 @@ function drawSnapshots() {
       `;
     })
     .join('');
+
+  // This happens after the semantic search has produced real DOM rows, not
+  // during its initial blank/loading render.
+  scrollToActiveManemark();
 }
 
 /**
@@ -835,6 +1009,43 @@ function exportSnapshotsAsJson() {
 }
 
 /**
+ * Export only true semantic-search matches, never the separately shown
+ * "Current page" Manemark unless it also passed the search threshold.
+ * Use the standard JSON schema so this file can be imported as well.
+ */
+function exportSearchSnapshotsAsJson() {
+  const snapshots = getSearchResultSnapshots();
+  if (!snapshots) {
+    showToast('Search is still loading', 'error');
+    return;
+  }
+  if (snapshots.length === 0) {
+    showToast('No matching Manemarks to export', 'error');
+    return;
+  }
+
+  try {
+    const exportData = {
+      export_date: new Date().toISOString(),
+      search_query: searchInput.value.trim(),
+      total_manemarks: snapshots.length,
+      snapshots
+    };
+    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `manemark-search-${new Date().toISOString().split('T')[0]}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+    showToast(`✓ Exported ${snapshots.length} search result${snapshots.length === 1 ? '' : 's'} as JSON`);
+  } catch (error) {
+    console.error('Search export failed:', error);
+    showToast('✗ Search export failed', 'error');
+  }
+}
+
+/**
  * Export snapshots as token-aware chunked JSON files in a ZIP
  * Each JSON file respects the token limit
  */
@@ -954,7 +1165,7 @@ function showToast(message, type = 'success') {
 
   setTimeout(() => {
     toast.remove();
-  }, 3000);
+  }, type === 'error' ? 8500 : 3000);
 }
 
 /**

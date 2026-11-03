@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Manemark — API Settings</title>
+  <style>
+    :root { color-scheme: light dark; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+    body { margin: 0; background: #f5f0f8; color: #291a30; }
+    header { background: #783393; color: #fff; padding: 24px max(calc((100% - 700px) / 2), 24px); }
+    header h1 { font-size: 22px; margin: 0 0 4px; }
+    header p { margin: 0; font-size: 13px; color: #ede3f2; }
+    main { max-width: 700px; padding: 24px; margin: 0 auto; }
+    .panel { background: #fff; border: 1px solid #e7ddec; box-shadow: 0 4px 16px #2d16320a; padding: 24px; border-radius: 12px; }
+    label { font-weight: 650; font-size: 13px; display: block; margin: 18px 0 6px; }
+    label:first-child { margin-top: 0; }
+    input, select { box-sizing: border-box; width: 100%; font: inherit; font-size: 14px; padding: 10px 11px; border-radius: 7px; border: 1px solid #cdbbd6; color: #281a2b; background: #fff; }
+    input:focus, select:focus { outline: 2px solid #bb92cc; }
+    .hint { color: #776780; font-size: 12px; line-height: 1.6; margin: 5px 0 0; }
+    .password-wrap { display: flex; align-items: center; gap: 8px; }
+    .password-wrap input { flex: 1; }
+    button { border: none; cursor: pointer; padding: 10px 16px; border-radius: 7px; font-weight: 650; }
+    .subtle-button { background: #eee5f2; color: #4f2961; }
+    .save { background: #783393; color: #fff; }
+    .actions { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-top: 22px; }
+    #settingsStatus { font-size: 13px; color: #446b3c; }
+    #settingsStatus.error { color: #bd3030; }
+    .disclosure { margin-top: 18px; padding: 12px 14px; border-radius: 8px; background: #f8f2fa; font-size: 13px; line-height: 1.6; }
+    code { background: #f0e7f3; padding: 1px 4px; border-radius: 3px; overflow-wrap: anywhere; }
+    @media (prefers-color-scheme: dark) {
+      body { background: #161217; color: #ebdff0; }
+      .panel { background: #211c24; border-color: #413448; }
+      input, select { background: #18151a; color: #eee; border-color: #594a61; }
+      .hint { color: #b5a4bf; }
+      .subtle-button { background: #413348; color: #f1dff6; }
+      .disclosure { background: #312536; }
+      code { background: #413348; }
+      #settingsStatus { color: #a4d49b; }
+    }
+  </style>
+</head>
+<body>
+  <header><h1>⚙ Manemark API Settings</h1><p>Connect your saved page text and highlights to an online LLM.</p></header>
+  <main>
+    <form id="settingsForm" class="panel">
+      <label for="mode">API type</label>
+      <select id="mode">
+        <option value="openai">OpenAI-compatible chat completions</option>
+        <option value="custom">Custom JSON bookmark / RAG server</option>
+      </select>
+      <p class="hint" id="modeHint">Use an endpoint that accepts OpenAI-style /v1/chat/completions requests.</p>
+
+      <label for="endpoint">API endpoint URL</label>
+      <input id="endpoint" type="url" required placeholder="https://api.openai.com/v1/chat/completions" autocomplete="url" spellcheck="false">
+      <p class="hint">HTTPS is required, except for HTTP on localhost. Chrome may ask permission to connect to this host.</p>
+
+      <label for="model" id="modelLabel">Model</label>
+      <input id="model" type="text" placeholder="gpt-4o-mini" autocomplete="off" spellcheck="false">
+      <p class="hint" id="modelHint">The model name expected by your provider, e.g. gpt-4o-mini.</p>
+
+      <label for="apiKey">API key (Bearer token)</label>
+      <div class="password-wrap">
+        <input id="apiKey" type="password" placeholder="Paste your API key" autocomplete="off" spellcheck="false">
+        <button type="button" id="toggleKey" class="subtle-button">Show</button>
+      </div>
+      <p class="hint">Optional for unauthenticated self-hosted endpoints. Stored locally in Chrome, not encrypted or synced. Never use a shared server-side secret here.</p>
+
+      <div class="disclosure"><strong>Privacy:</strong> Clicking Ask sends your question and <strong>the complete JSON export of all saved Manemarks</strong> (URLs, titles, captured text and highlights) to your configured server. Use only an endpoint you trust. Direct model mode has a size limit; use a custom server for large libraries and proper server-side retrieval.</div>
+
+      <div class="actions">
+        <button type="submit" class="save" id="saveBtn">Save settings & allow API host</button>
+        <span id="settingsStatus" role="status" aria-live="polite"></span>
+      </div>
+    </form>
+  </main>
+  <script src="options.js"></script>
+</body>
+</html>

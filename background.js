@@ -25,7 +25,7 @@ async function ensureSemanticDocument() {
       await chrome.offscreen.createDocument({
         url: 'offscreen.html',
         reasons: ['WORKERS'],
-        justification: 'Generate and update local MiniLM embeddings in the background without blocking search.'
+        justification: 'Run local MiniLM indexing and htmlsift ONNX content extraction without blocking the popup.'
       });
     }
   })();
@@ -278,6 +278,69 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       .then(status => sendResponse({ success: true, status }))
       .catch(error => sendResponse({ success: false, message: error.message }));
     return true;
+  }
+
+  // Queue htmlsift work without keeping a long-lived runtime.sendMessage port
+  // open across a WASM model load (which can take many seconds or minutes).
+  // Completion is delivered separately to the popup by the offscreen document.
+  // Save jobs are committed by the offscreen document even if the popup closes.
+  if (!request.target && request.action === 'startHtmlsiftJob') {
+    (async () => {
+      if (typeof request.html !== 'string' || !request.html.trim()) {
+        throw new Error('No page HTML was supplied.');
+      }
+      if (request.html.length > 8_000_000) {
+        throw new Error('Page HTML exceeds the 8-million-character limit.');
+      }
+      if (request.mode !== 'save' && request.mode !== 'copy') {
+        throw new Error('Unknown extraction action.');
+      }
+      if (!request.jobId || typeof request.jobId !== 'string') {
+        throw new Error('The extraction job has no ID.');
+      }
+      if (request.mode === 'save' && !/^https?:\/\//i.test(request.url || '')) {
+        throw new Error('Only ordinary http(s) pages can be saved.');
+      }
+      if (!await ensureSemanticDocument()) {
+        throw new Error('Chrome cannot create an offscreen page for the AI model.');
+      }
+      // The offscreen document sends an immediate acknowledgement; it never
+      // waits for ONNX inference on this message channel.
+      let accepted;
+      try {
+        accepted = await chrome.runtime.sendMessage({
+          target: 'htmlsiftOffscreen',
+          action: 'queueHtmlsiftJob',
+          jobId: request.jobId,
+          mode: request.mode,
+          html: request.html,
+          doctype: request.doctype,
+          aiExtractionEnabled: request.aiExtractionEnabled !== false,
+          url: request.url,
+          title: request.title
+        });
+      } catch (error) {
+        throw new Error('The offscreen AI worker is unavailable. Reload Manemark under chrome://extensions. Details: ' +
+          (error?.message || String(error)));
+      }
+      if (!accepted?.success) {
+        throw new Error(accepted?.message || 'AI extraction worker did not accept the job.');
+      }
+      return { success: true, queued: true };
+    })().then(sendResponse).catch(error => {
+      sendResponse({ success: false, message: error?.message || String(error) });
+    });
+    return true;
+  }
+
+  // Older Manemark content scripts cannot safely hold their callback open while
+  // htmlsift starts. Return a specific upgrade error rather than a closed port.
+  if (!request.target && (request.action === 'captureHtmlsift' || request.action === 'extractHtmlsift')) {
+    sendResponse({
+      success: false,
+      message: 'Use the Manemark popup from the updated extension; reload Manemark under chrome://extensions.'
+    });
+    return;
   }
 
   if (request.action === 'saveSnapshot') {
