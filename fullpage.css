@@ -1,0 +1,81 @@
+html.full-page, html.full-page body { width:100%; height:100%; min-width:0; }
+html.full-page body { display:grid; grid-template-columns:380px minmax(0,1fr); height:100dvh; background:#f7f8fb; }
+.full-page body > .container { min-width:0; border-right:1px solid #e2dce6; }
+.full-page .header { padding:16px 22px; min-height:70px; }
+.full-page .header::after { content:'Your library'; color:#fff; font-size:14px; font-weight:600; }
+.full-page .header .controls, .full-page #presentationBtn { display:none; }
+.full-page .library-footer { grid-template-columns:34px minmax(0,1fr) 34px; }
+.full-page .snapshot-item { cursor:pointer; }
+.full-page .snapshot-item.reader-selected { background:#f5eaf9; border-color:#a063b7; box-shadow:inset 3px 0 #783393; }
+.full-page .snapshot-item:focus-visible { outline:2px solid #a063b7; outline-offset:2px; }
+.document-viewer { min-width:0; min-height:0; display:flex; flex-direction:column; color:#263041; background:#fff; }
+.viewer-header { flex:none; display:flex; justify-content:space-between; gap:24px; align-items:flex-start; padding:24px 32px; border-bottom:1px solid #e6e8ed; }
+.viewer-heading { min-width:0; }
+.viewer-eyebrow { text-transform:uppercase; letter-spacing:.14em; color:#8a738f; font-size:10px; font-weight:700; margin-bottom:8px; }
+.viewer-title { font-size:21px; line-height:1.4; overflow-wrap:anywhere; margin:0 0 7px; }
+.viewer-source { font-size:12px; color:#7b7184; display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:650px; }
+.viewer-meta { font-size:11px; color:#8a8d98; margin-top:7px; }
+.viewer-controls { display:flex; flex-shrink:0; border:1px solid #cbd0da; border-radius:7px; overflow:hidden; }
+.viewer-controls button { background:#f3f4f7; color:#536071; padding:8px 12px; border:0; border-radius:0; font-size:12px; cursor:pointer; height:33px; }
+.viewer-controls button + button { border-left:1px solid #cbd0da; }
+.viewer-controls button[aria-pressed="true"] { background:#384557; color:white; }
+.viewer-controls button:focus-visible { outline:2px solid #b180c3; outline-offset:-3px; }
+.viewer-controls button:disabled { opacity:.45; cursor:default; }
+.viewer-copy svg { width:15px; height:15px; vertical-align:middle; }
+.viewer-scroll { overflow:auto; flex:1; min-height:0; padding:40px clamp(24px,5vw,86px) 80px; }
+.viewer-empty { display:grid; place-content:center; height:100%; min-height:200px; text-align:center; color:#8a8191; gap:10px; }
+.viewer-empty h2 { font-size:22px; color:#54465d; }
+.viewer-markdown { max-width:980px; margin:auto; line-height:1.85; font-size:15px; overflow-wrap:anywhere; }
+.viewer-markdown h1,.viewer-markdown h2,.viewer-markdown h3,.viewer-markdown h4 { line-height:1.35; margin:1.5em 0 .65em; }
+.viewer-markdown > :first-child { margin-top:0; }
+.viewer-markdown h1 { font-size:32px; } .viewer-markdown h2 { font-size:25px; padding-bottom:8px; border-bottom:1px solid #e2e5eb; }
+.viewer-markdown p,.viewer-markdown ul,.viewer-markdown ol,.viewer-markdown blockquote,.viewer-markdown pre,.viewer-markdown table { margin:0 0 1.25em; }
+.viewer-markdown ul,.viewer-markdown ol { padding-left:1.7em; } .viewer-markdown li>p { margin:0; }
+.viewer-markdown a { color:#8854a0; text-decoration:underline; }
+.viewer-markdown pre { background:#f3f4f7; border:1px solid #e2e5eb; border-radius:8px; padding:20px; overflow:auto; }
+.viewer-markdown code,.viewer-raw { font-family:ui-monospace,SFMono-Regular,Consolas,monospace; font-size:13px; }
+.viewer-markdown :not(pre)>code { background:#f0edf4; border-radius:4px; padding:2px 5px; }
+.viewer-markdown blockquote { border-left:3px solid #b98fca; padding:4px 20px; color:#787080; }
+.viewer-markdown table { display:block; max-width:100%; overflow:auto; border-collapse:collapse; }
+.viewer-markdown td,.viewer-markdown th { border:1px solid #dce0e8; padding:8px 14px; }
+.viewer-markdown hr { border:0; border-top:1px solid #e2e5eb; margin:28px 0; }
+.viewer-raw { white-space:pre-wrap; overflow-wrap:anywhere; line-height:1.8; max-width:1100px; margin:auto; }
+.viewer-feedback { font-size:12px; color:#8a738f; padding:6px 32px; flex:none; min-height:27px; }
+.document-viewer [hidden] { display:none!important; }
+@media(prefers-color-scheme:dark) {
+ .full-page body > .container { border-color:#39303e; }
+ .document-viewer { color:#d7dce5; background:#11151d; }
+ .viewer-header { border-color:#2c3441; } .viewer-title { color:#edf0f6; }
+ .viewer-source,.viewer-meta { color:#9aa7bb; } .viewer-empty h2 { color:#ddd4e3; }
+ .viewer-controls { border-color:#465365; } .viewer-controls button { color:#c4cbd6; background:#202833; }
+ .viewer-controls button + button { border-color:#465365; } .viewer-controls button[aria-pressed="true"] { background:#39495d; color:#fff; }
+ .viewer-markdown h2,.viewer-markdown hr,.viewer-markdown td,.viewer-markdown th { border-color:#343e4e; }
+ .viewer-markdown pre { background:#0b1018; border-color:#2b3545; }
+ .viewer-markdown :not(pre)>code { background:#29303f; } .viewer-markdown a { color:#c69bd8; }
+ .full-page .snapshot-item.reader-selected { background:#382a40; border-color:#a86cbd; }
+}
+/* Wide workspace: align the viewer divider with the library toolbar edge.
+   A wrapped document title can still grow naturally; no clipping/fixed height. */
+@media(min-width:851px) {
+ .full-page { --library-heading-height:72px; --library-actions-height:48px; }
+ .full-page .header { min-height:var(--library-heading-height); }
+ .full-page .top-actions { min-height:var(--library-actions-height); }
+ .viewer-header {
+   min-height:calc(var(--library-heading-height) + var(--library-actions-height));
+   padding:12px 32px;
+ }
+ .viewer-eyebrow { margin-bottom:6px; }
+ .viewer-title { margin-bottom:4px; }
+ .viewer-meta { margin-top:4px; }
+}
+@media(max-width:850px) {
+ html.full-page body { grid-template-columns:310px minmax(0,1fr); }
+ .viewer-header { padding:20px; flex-direction:column; gap:14px; }
+ .viewer-scroll { padding:24px 20px; } .full-page .index-footer { padding-inline:10px; }
+}
+@media(max-width:580px) {
+ html.full-page body { grid-template-columns:1fr; grid-template-rows:42dvh 58dvh; }
+ .full-page body > .container { border-right:0; border-bottom:1px solid #39303e; }
+ .viewer-header { padding:12px 16px; gap:8px; } .viewer-eyebrow,.viewer-meta { display:none; }
+ .viewer-title { font-size:16px; } .viewer-scroll { padding:20px 16px; }
+}

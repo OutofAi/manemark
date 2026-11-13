@@ -1,22 +1,21 @@
+import { configureModelCache, getModelAsset } from './model-cache.mjs';
 // MiniLM inference runs in a dedicated Web Worker, not in the popup or MV3
 // service worker. The offscreen document uses this for incremental indexing;
 // the popup uses a separate instance for query-only embedding and ranking.
 import { pipeline, env } from './vendor/transformers.min.js';
 import {
-  EMBEDDING_DIMENSIONS, chunkSnapshot, snapshotFingerprint, rankChunks,
+  EMBEDDING_DIMENSIONS, chunkSnapshot, snapshotFingerprint,
   planIndexChanges
 } from './semantic-core.mjs';
+
+import { indexKey, buildIvf, searchIvf, IVF_MIN_CHUNKS } from './semantic-ivf.mjs';
 
 const DATABASE = 'manemark-semantic-documents-v2';
 const STORE = 'documents';
 const MODEL = 'Xenova/all-MiniLM-L6-v2';
 
-// All model/runtime assets must be part of the installed extension. There are
-// no hosted models, CDN scripts, or online embedding requests.
-env.allowLocalModels = true;
-env.allowRemoteModels = false;
-env.useBrowserCache = false; // Prevent unsupported cache writes
-env.localModelPath = new URL('./models/', import.meta.url).href;
+// Persist model data separately from the computed embedding index.
+configureModelCache(env);
 env.backends.onnx.wasm.wasmPaths = new URL('./vendor/', import.meta.url).href;
 env.backends.onnx.wasm.numThreads = 1;
 
@@ -27,9 +26,16 @@ let indexing = false;
 
 function loadModel() {
   if (!modelPromise) {
-    modelPromise = pipeline('feature-extraction', MODEL, {
-      dtype: 'q8', device: 'wasm', local_files_only: true
-    }).catch(error => {
+    modelPromise = (async () => {
+      await getModelAsset(MODEL + '/onnx/model_quantized.onnx');
+      try {
+        return await pipeline('feature-extraction', MODEL, {
+          dtype: 'q8', device: 'wasm', local_files_only: true
+        });
+      } catch (error) {
+        throw new Error('Could not prepare MiniLM. Check your connection and available storage, then retry. Details: ' + (error?.message || String(error)));
+      }
+    })().catch(error => {
       modelPromise = null; // A later retry can work after a repaired install.
       throw error;
     });
@@ -154,17 +160,65 @@ async function runIndexQueue() {
   }
 }
 
+// A separate disposable cache leaves existing embedding storage/migration untouched.
+let ivfCachePromise;
+let cachedBuild;
+function openIvfCache() {
+  if (!ivfCachePromise) ivfCachePromise = new Promise((resolve, reject) => {
+    const request = indexedDB.open('manemark-semantic-ivf-v1', 1);
+    request.onupgradeneeded = () => request.result.createObjectStore('index');
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  }).catch(error => { ivfCachePromise = null; throw error; });
+  return ivfCachePromise;
+}
+async function getIvfIndex(entries) {
+  if (entries.reduce((sum, e) => sum + e.vectors.length, 0) < IVF_MIN_CHUNKS) return null;
+  const key = indexKey(entries);
+  if (cachedBuild?.key === key) return cachedBuild.promise;
+  const promise = (async () => {
+    let db;
+    try {
+      db = await openIvfCache();
+      const stored = await new Promise((resolve, reject) => {
+        const request = db.transaction('index').objectStore('index').get('current');
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      });
+      if (stored?.key === key && stored.index?.centroids?.length && stored.index?.lists?.length === stored.index.centroids.length) return stored.index;
+    } catch { /* Cache unavailable: build in memory. */ }
+    const index = await buildIvf(entries);
+    if (db) {
+      try {
+        await new Promise((resolve, reject) => {
+          const transaction = db.transaction('index', 'readwrite');
+          transaction.objectStore('index').put({ key, index }, 'current');
+          transaction.oncomplete = resolve;
+          transaction.onerror = transaction.onabort = () => reject(transaction.error);
+        });
+      } catch { /* A cache write failure must not disable semantic search. */ }
+    }
+    return index;
+  })();
+  cachedBuild = { key, promise };
+  try { return await promise; }
+  catch (error) { if (cachedBuild?.promise === promise) cachedBuild = null; throw error; }
+}
+
 async function search({ id, query, snapshots = [] }) {
   try {
     const current = await listDocuments();
     const { readyEntries, pending } = collectSearchEntries(snapshots, current);
     postMessage({ type: 'progress', id, message: 'Embedding search query locally…' });
     const vector = await embed(query);
-    postMessage({
-      type: 'results', id,
-      ranked: rankChunks(vector, readyEntries, snapshots.length),
-      pending, total: snapshots.length
-    });
+    // Stable ordering makes persisted partition membership reusable across popup opens.
+    readyEntries.sort((a, b) => String(a.id).localeCompare(String(b.id)));
+    postMessage({ type: 'progress', id, message: 'Preparing local search index…' });
+    let index = null;
+    try { index = await getIvfIndex(readyEntries); }
+    catch (error) { console.warn('IVF unavailable; using exact search.', error); }
+    const result = searchIvf(vector, readyEntries, index, snapshots.length);
+    postMessage({ type: 'results', id, ...result, pending, total: snapshots.length });
   } catch (error) {
     postMessage({ type: 'error', id, message: error.message || String(error) });
   }

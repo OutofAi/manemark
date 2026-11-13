@@ -1,0 +1,20 @@
+{
+  "mode": "mini",
+  "feats": "ABC",
+  "window": 8192,
+  "cap": 0,
+  "zscore": {
+    "mean": [
+      12.167016983032227,
+      3.196985960006714
+    ],
+    "std": [
+      6.493838310241699,
+      1.1040095090866089
+    ]
+  },
+  "source": {
+    "keeper": "wmb/ckpt/311m-table-bigru-fABC_s1.pt",
+    "research_commit": "59fa9722c9a99b77d3f5accc6a596e8ec3d6730a"
+  }
+}

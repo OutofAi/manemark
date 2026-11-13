@@ -9,44 +9,93 @@ const HIGHLIGHT_MENU_ID = 'save-link-to-highlight-manemark';
 // Storage changes are the single source of truth: ordinary saves, highlight
 // saves, deletions, clear, merges and replacement imports all use this path.
 let creatingSemanticDocument = null;
+const SEMANTIC_OFFSCREEN_TARGET = 'semanticOffscreen';
+const SEMANTIC_READY_ATTEMPTS = 12;
+const SEMANTIC_READY_DELAY_MS = 200;
+const SEMANTIC_SEARCH_STORAGE_KEY = 'semanticSearchEnabled';
+
+async function semanticSearchIsEnabled() {
+  const preferences = await chrome.storage.local.get({ [SEMANTIC_SEARCH_STORAGE_KEY]: true });
+  return preferences[SEMANTIC_SEARCH_STORAGE_KEY] !== false;
+}
+
+function stopSemanticIndex() {
+  // Don't create an offscreen page just to stop indexing. If one is already
+  // running (including for htmlsift), it will cancel only the MiniLM worker.
+  chrome.runtime.sendMessage({ target: 'semanticOffscreen', action: 'stopSemanticIndex' })
+    .catch(() => {});
+}
+
+async function waitForSemanticDocumentReady() {
+  // createDocument() resolves once the page exists, NOT necessarily after its
+  // module script has installed chrome.runtime.onMessage. A reconcile sent in
+  // that gap resolves without a response and used to throw a generic error.
+  let lastError;
+  for (let attempt = 0; attempt < SEMANTIC_READY_ATTEMPTS; attempt++) {
+    try {
+      const reply = await chrome.runtime.sendMessage({
+        target: SEMANTIC_OFFSCREEN_TARGET, action: 'ping'
+      });
+      if (reply?.success === true && reply.ready === true) return;
+      if (reply?.message) lastError = reply.message;
+    } catch (error) {
+      lastError = error?.message || String(error);
+    }
+    if (attempt + 1 < SEMANTIC_READY_ATTEMPTS) {
+      await new Promise(resolve => setTimeout(resolve, SEMANTIC_READY_DELAY_MS));
+    }
+  }
+  throw new Error('The offscreen indexing page did not become ready. Reload Manemark at chrome://extensions' +
+    (lastError ? `. Last error: ${lastError}` : '. Inspect its offscreen-page console for startup errors.'));
+}
 
 async function ensureSemanticDocument() {
   if (!chrome.offscreen?.createDocument || !chrome.runtime.getContexts) return false;
-  if (creatingSemanticDocument) {
-    await creatingSemanticDocument;
-    return true;
-  }
-  creatingSemanticDocument = (async () => {
-    const url = chrome.runtime.getURL('offscreen.html');
-    const existing = await chrome.runtime.getContexts({
-      contextTypes: ['OFFSCREEN_DOCUMENT'], documentUrls: [url]
-    });
-    if (!existing.length) {
-      await chrome.offscreen.createDocument({
-        url: 'offscreen.html',
-        reasons: ['WORKERS'],
-        justification: 'Run local MiniLM indexing and htmlsift ONNX content extraction without blocking the popup.'
+  if (!creatingSemanticDocument) {
+    creatingSemanticDocument = (async () => {
+      const url = chrome.runtime.getURL('offscreen.html');
+      const existing = await chrome.runtime.getContexts({
+        contextTypes: ['OFFSCREEN_DOCUMENT'], documentUrls: [url]
       });
-    }
-  })();
-  try {
-    await creatingSemanticDocument;
-    return true;
-  } finally {
-    creatingSemanticDocument = null;
+      if (!existing.length) {
+        await chrome.offscreen.createDocument({
+          url: 'offscreen.html',
+          reasons: ['WORKERS'],
+          justification: 'Run local MiniLM indexing and htmlsift ONNX content extraction without blocking the popup.'
+        });
+      }
+      // Also check pre-existing pages: a running but broken module must not be
+      // treated as a healthy indexing endpoint.
+      await waitForSemanticDocumentReady();
+      return true;
+    })().finally(() => { creatingSemanticDocument = null; });
   }
+  return creatingSemanticDocument;
 }
 
 async function reconcileSemanticIndex() {
+  // Check before creating anything: a disabled JSON import must not wake MiniLM.
+  if (!await semanticSearchIsEnabled()) return { phase: 'idle' };
   if (!await ensureSemanticDocument()) return;
-  // Read AFTER creating the document so that even a burst of imports/edits
-  // is reconciled against the latest stored data, not an earlier event value.
+  // Recheck around awaited operations to avoid an in-flight import racing an
+  // off toggle. The offscreen page independently verifies this preference.
+  if (!await semanticSearchIsEnabled()) return { phase: 'idle' };
   const { snapshots = [] } = await chrome.storage.local.get('snapshots');
-  const response = await chrome.runtime.sendMessage({
-    target: 'semanticOffscreen', action: 'reconcileSemanticIndex',
-    snapshots: Array.isArray(snapshots) ? snapshots : []
-  });
-  if (!response?.success) throw new Error('Could not refresh the semantic index');
+  if (!await semanticSearchIsEnabled()) return { phase: 'idle' };
+  let response;
+  try {
+    response = await chrome.runtime.sendMessage({
+      target: SEMANTIC_OFFSCREEN_TARGET, action: 'reconcileSemanticIndex',
+      snapshots: Array.isArray(snapshots) ? snapshots : []
+    });
+  } catch (error) {
+    throw new Error('Could not contact the offscreen semantic index: ' +
+      (error?.message || String(error)));
+  }
+  if (!response?.success) {
+    throw new Error(response?.message ||
+      'The offscreen semantic index did not respond. Check chrome://extensions → Manemark → Inspect views.');
+  }
   return response.status;
 }
 
@@ -58,7 +107,15 @@ function scheduleSemanticReconciliation() {
 
 // Catch all mutation paths, including future changes made directly to storage.
 chrome.storage.onChanged?.addListener((changes, area) => {
-  if (area === 'local' && Object.prototype.hasOwnProperty.call(changes, 'snapshots')) {
+  if (area !== 'local') return;
+  if (Object.prototype.hasOwnProperty.call(changes, SEMANTIC_SEARCH_STORAGE_KEY)) {
+    if (changes[SEMANTIC_SEARCH_STORAGE_KEY].newValue === false) {
+      stopSemanticIndex();
+    } else {
+      scheduleSemanticReconciliation();
+    }
+  } else if (Object.prototype.hasOwnProperty.call(changes, 'snapshots')) {
+    // Includes both merge/replace JSON imports and ordinary save/delete flows.
     scheduleSemanticReconciliation();
   }
 });
@@ -273,6 +330,14 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 });
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  // Offscreen documents have chrome.runtime but not chrome.storage. Keep all
+  // persisted preference reads in this MV3 service worker and relay the value.
+  if (request?.target === 'semanticBackground' && request.action === 'getSemanticSearchEnabled') {
+    semanticSearchIsEnabled()
+      .then(enabled => sendResponse({ success: true, enabled }))
+      .catch(error => sendResponse({ success: false, message: error?.message || String(error) }));
+    return true;
+  }
   if (request.action === 'ensureSemanticIndex') {
     reconcileSemanticIndex()
       .then(status => sendResponse({ success: true, status }))
@@ -383,3 +448,33 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 });
+
+// Serialize status writes so concurrent model downloads cannot overwrite each other.
+let modelStatusQueue = Promise.resolve();
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  if (sender.id !== chrome.runtime.id) return;
+  if (request.action === 'modelDownloadProgress') {
+    modelStatusQueue = modelStatusQueue.catch(() => {}).then(async () => {
+      const { modelDownloads = {} } = await chrome.storage.session.get('modelDownloads');
+      modelDownloads[request.status.path] = request.status;
+      await chrome.storage.session.set({ modelDownloads });
+      chrome.runtime.sendMessage({ action: 'modelDownloadsChanged', downloads: modelDownloads }).catch(() => {});
+    });
+    return;
+  }
+  if (request.action === 'getModelDownloads') {
+    modelStatusQueue.catch(() => {}).then(() => chrome.storage.session.get('modelDownloads'))
+      .then(result => sendResponse({ downloads: result.modelDownloads || {} }));
+    return true;
+  }
+  if (request.action === 'ensureModelAsset') {
+    (async () => {
+      if (!await ensureSemanticDocument()) throw new Error('Background model download unavailable.');
+      return chrome.runtime.sendMessage({ target: 'semanticOffscreen', action: 'downloadModelAsset', path: request.path });
+    })().then(sendResponse).catch(error => sendResponse({ success: false, message: error.message }));
+    return true;
+  }
+});
+
+// Persist presentation mode and let Chrome toggle its native sidebar.
+importScripts('presentation-background.js');

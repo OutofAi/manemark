@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Manemark",
-  "version": "1.2.8",
-  "description": "Save AI-extracted article text or raw webpage HTML locally; search saved Manemarks with MiniLM.",
+  "version": "1.2.25",
+  "description": "Your personal AI web memory. Capture smarter, search by meaning, and turn saved knowledge into reusable context for AI agents.",
   "action": {
     "default_icon": "assets/icon.png",
     "default_popup": "popup.html",
@@ -20,9 +20,19 @@
     "activeTab",
     "scripting",
     "contextMenus",
-    "offscreen"
+    "offscreen",
+    "unlimitedStorage",
+    "sidePanel"
   ],
   "content_security_policy": {
     "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'; worker-src 'self';"
+  },
+  "host_permissions": [
+    "https://huggingface.co/*",
+    "https://*.hf.co/*"
+  ],
+  "minimum_chrome_version": "141",
+  "side_panel": {
+    "default_path": "popup.html?view=sidepanel"
   }
 }

@@ -1,4 +1,4 @@
-// Popup Script for Text Snapper Extension
+// Popup Script for Manemark Extension
 // Handles UI interactions and snapshot management with token-aware export
 
 const snapBtn = document.getElementById('snapBtn');
@@ -16,6 +16,8 @@ const settingsView = document.getElementById('settingsView');
 const settingsBtn = document.getElementById('settingsBtn');
 const backToLibraryBtn = document.getElementById('backToLibraryBtn');
 const aiExtractionCheckbox = document.getElementById('aiExtractionCheckbox');
+const semanticSearchCheckbox = document.getElementById('semanticSearchCheckbox');
+const searchContainer = document.getElementById('searchContainer');
 const settingsFeedback = document.getElementById('settingsFeedback');
 
 // Store the user's capture preference in Chrome's persistent extension storage.
@@ -32,6 +34,21 @@ const extractionPreferenceReady = chrome.storage.local.get({ [AI_EXTRACTION_STOR
     settingsFeedback.textContent = 'Could not read saved settings; using AI extraction.';
   })
   .finally(() => { aiExtractionCheckbox.disabled = false; });
+
+// Absent preference keys keep existing users' MiniLM search enabled by default.
+// Start in the unknown state so a previously-disabled popup cannot accidentally
+// launch a query worker while its saved preference is being loaded.
+const SEMANTIC_SEARCH_STORAGE_KEY = 'semanticSearchEnabled';
+let semanticSearchEnabled = null;
+const semanticPreferenceReady = chrome.storage.local.get({ [SEMANTIC_SEARCH_STORAGE_KEY]: true })
+  .then(result => applySemanticSearchPreference(result[SEMANTIC_SEARCH_STORAGE_KEY] !== false))
+  .catch(error => {
+    console.warn('Manemark: could not read semantic search setting:', error);
+    settingsFeedback.textContent = 'Could not read Semantic Search settings.';
+    // Fail closed: don't run local indexing until the preference can be read.
+    applySemanticSearchPreference(false);
+  })
+  .finally(() => { semanticSearchCheckbox.disabled = false; });
 
 function showSettings(show) {
   mainView.hidden = show;
@@ -59,6 +76,33 @@ aiExtractionCheckbox.addEventListener('change', async () => {
     aiExtractionCheckbox.checked = previous;
     settingsFeedback.textContent = 'Could not save the setting. Please try again.';
     console.error('Manemark: could not save AI extraction setting:', error);
+  }
+});
+
+semanticSearchCheckbox.addEventListener('change', async () => {
+  await semanticPreferenceReady;
+  const previous = semanticSearchEnabled;
+  const next = semanticSearchCheckbox.checked;
+  settingsFeedback.textContent = '';
+  // Persist first: background indexing checks this same setting before working.
+  semanticSearchCheckbox.disabled = true;
+  try {
+    await chrome.storage.local.set({ [SEMANTIC_SEARCH_STORAGE_KEY]: next });
+    applySemanticSearchPreference(next);
+  } catch (error) {
+    applySemanticSearchPreference(previous);
+    settingsFeedback.textContent = 'Could not save the setting. Please try again.';
+    console.error('Manemark: could not save Semantic Search setting:', error);
+  } finally {
+    semanticSearchCheckbox.disabled = false;
+  }
+});
+
+// Keep an already-open popup in sync if another instance changes the setting.
+chrome.storage.onChanged?.addListener((changes, area) => {
+  if (area === 'local' && changes.snapshots) loadSnapshots();
+  if (area === 'local' && changes[SEMANTIC_SEARCH_STORAGE_KEY]) {
+    applySemanticSearchPreference(changes[SEMANTIC_SEARCH_STORAGE_KEY].newValue !== false);
   }
 });
 
@@ -213,12 +257,12 @@ function setSnapButtonState(isSaved) {
   const icon = snapBtn.querySelector('.btn-icon');
 
   if (isSaved) {
-    popIcon.src = 'assets/mane.png';
+    popIcon.src = 'assets/mane.svg';
     icon.src = 'assets/bookmark_full.svg';
     snapText.textContent = 'Manemarked';
     snapBtn.dataset.state = 'saved';
   } else {
-    popIcon.src = 'assets/sleepy_mane.png';
+    popIcon.src = 'assets/sleepy_mane.svg';
     icon.src = 'assets/bookmark.svg';
     snapText.textContent = 'Manemark';
     snapBtn.dataset.state = 'unsaved';
@@ -290,14 +334,14 @@ document.addEventListener('click', (e) => {
   if (copyBtn) {
     const snapshotId = parseInt(copyBtn.getAttribute('data-id'), 10);
     if (!Number.isNaN(snapshotId)) {
-      copyToClipboard(snapshotId);
+      copyToClipboard(snapshotId, copyBtn);
     }
   }
 
   if (copyLinkBtn) {
     const snapshotId = parseInt(copyLinkBtn.getAttribute('data-id'), 10);
     if (!Number.isNaN(snapshotId)) {
-      copyLinkToClipboard(snapshotId);
+      copyLinkToClipboard(snapshotId, copyLinkBtn);
     }
   }
 
@@ -333,9 +377,9 @@ async function handleExportZip() {
     const input = prompt('Enter token limit per file for ZIP export:', '10000');
     if (input === null) return;
 
-    const tokenLimit = parseInt(input, 10);
+    const tokenLimit = Number(input);
 
-    if (isNaN(tokenLimit) || tokenLimit < 500 || tokenLimit > 100000) {
+    if (!Number.isInteger(tokenLimit) || tokenLimit < 500 || tokenLimit > 100000) {
       showToast('Please enter a valid token limit between 500 and 100000', 'error');
       return;
     }
@@ -461,7 +505,7 @@ function openStorageLocation() {
  * Chrome can close any of those pending response channels during slow ONNX
  * initialization, leaving only "message port closed" in the popup.
  */
-async function captureHtmlFromActiveTab() {
+async function captureHtmlFromActiveTab(useAI = false) {
   const tab = await getActiveTab();
   if (!tab?.id) throw new Error('No active tab found.');
   if (!/^https?:\/\//i.test(tab.url || '')) {
@@ -469,11 +513,30 @@ async function captureHtmlFromActiveTab() {
   }
   const [injection] = await chrome.scripting.executeScript({
     target: { tabId: tab.id },
-    func: () => {
+    args: [useAI],
+    func: (sanitizeForExtraction) => {
       if (!document.documentElement || !document.body) {
         throw new Error('The webpage has no HTML body.');
       }
-      const html = document.documentElement.outerHTML;
+      let root = document.documentElement;
+      if (sanitizeForExtraction) {
+        // Import into a template's inert document so cloned page handlers and
+        // custom elements never become active. Keep the live page untouched.
+        const template = document.createElement('template');
+        root = template.content.ownerDocument.importNode(root, true);
+        const stripHandlers = node => {
+          for (const element of [node, ...node.querySelectorAll('*')]) {
+            for (const attribute of Array.from(element.attributes || [])) {
+              if (/^on/i.test(attribute.name)) element.removeAttributeNode(attribute);
+            }
+            if (element.localName === 'template' && element.content) {
+              stripHandlers(element.content);
+            }
+          }
+        };
+        stripHandlers(root);
+      }
+      const html = root.outerHTML;
       if (html.length > 8_000_000) {
         throw new Error('The webpage is too large to capture (8 million characters).');
       }
@@ -493,6 +556,37 @@ async function captureHtmlFromActiveTab() {
 const pendingHtmlsiftJobs = new Map();
 const captureModesInFlight = new Set();
 
+// Keep feedback local to the button that initiated the copy.
+const copyButtonFeedback = new WeakMap();
+function setCopyButtonState(button, state) {
+  if (!button) return;
+  let feedback = copyButtonFeedback.get(button);
+  if (!feedback) {
+    feedback = { html: button.innerHTML, label: button.getAttribute('aria-label'), title: button.getAttribute('title') };
+    copyButtonFeedback.set(button, feedback);
+  }
+  clearTimeout(feedback.timer);
+  button.disabled = state === 'loading';
+  button.classList.toggle('copy-loading', state === 'loading');
+  button.classList.toggle('copy-success', state === 'success');
+  button.setAttribute('aria-busy', String(state === 'loading'));
+  if (state === 'idle') {
+    button.innerHTML = feedback.html;
+    for (const [attribute, value] of [['aria-label', feedback.label], ['title', feedback.title]]) {
+      if (value === null) button.removeAttribute(attribute);
+      else button.setAttribute(attribute, value);
+    }
+    return;
+  }
+  const label = state === 'loading' ? 'Copying…' : 'Copied!';
+  button.setAttribute('aria-label', label);
+  button.setAttribute('title', label);
+  button.innerHTML = state === 'loading'
+    ? '<svg class="copy-feedback-icon copy-spinner" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9" opacity=".25"/><path d="M12 3a9 9 0 0 1 9 9" stroke-linecap="round"/></svg>'
+    : '<svg class="copy-feedback-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 4 4L19 6"/></svg>';
+  if (state === 'success') feedback.timer = setTimeout(() => setCopyButtonState(button, 'idle'), 2000);
+}
+
 function setCaptureBusy(mode, busy, useAI) {
   if (mode === 'save') {
     snapBtn.disabled = busy;
@@ -504,7 +598,7 @@ function setCaptureBusy(mode, busy, useAI) {
       if (!currentSnapshot) snapText.textContent = 'Manemark';
     }
   } else {
-    copyPageBtn.disabled = busy;
+    setCopyButtonState(copyPageBtn, busy ? 'loading' : 'idle');
   }
 }
 
@@ -512,13 +606,14 @@ async function beginCaptureJob(mode) {
   if (mode !== 'save' && mode !== 'copy') return;
   if (captureModesInFlight.has(mode)) return;
   captureModesInFlight.add(mode);
+  if (mode === 'copy') setCopyButtonState(copyPageBtn, 'loading');
   // Avoid racing the initial preferences load on popup creation.
   await extractionPreferenceReady;
   const useAI = aiExtractionEnabled;
   setCaptureBusy(mode, true, useAI);
   let jobId;
   try {
-    const page = await captureHtmlFromActiveTab();
+    const page = await captureHtmlFromActiveTab(useAI);
     jobId = crypto.randomUUID();
     pendingHtmlsiftJobs.set(jobId, { mode, useAI });
     const accepted = await chrome.runtime.sendMessage({
@@ -547,8 +642,10 @@ chrome.runtime.onMessage.addListener(message => {
   const job = pendingHtmlsiftJobs.get(message.jobId);
   if (!job) return;
   pendingHtmlsiftJobs.delete(message.jobId);
-  captureModesInFlight.delete(job.mode);
-  setCaptureBusy(job.mode, false, job.useAI);
+  if (job.mode === 'save' || !message.success) {
+    captureModesInFlight.delete(job.mode);
+    setCaptureBusy(job.mode, false, job.useAI);
+  }
   if (!message.success) {
     showToast(`✗ ${message.message || 'Page capture failed.'}`, 'error');
     return;
@@ -559,8 +656,15 @@ chrome.runtime.onMessage.addListener(message => {
     void refreshCurrentPageState();
   } else {
     void navigator.clipboard.writeText(message.text || '')
-      .then(() => showToast(job.useAI ? '✓ Main content copied!' : '✓ Raw HTML copied!'))
-      .catch(error => showToast(`✗ Clipboard access failed: ${error?.message || String(error)}`, 'error'));
+      .then(() => {
+        setCopyButtonState(copyPageBtn, 'success');
+        showToast(job.useAI ? '✓ Main content copied!' : '✓ Raw HTML copied!');
+      })
+      .catch(error => {
+        setCopyButtonState(copyPageBtn, 'idle');
+        showToast(`✗ Clipboard access failed: ${error?.message || String(error)}`, 'error');
+      })
+      .finally(() => captureModesInFlight.delete(job.mode));
   }
 });
 
@@ -595,10 +699,18 @@ function setSemanticStatus(message = '', isError = false) {
 }
 
 function getSemanticWorker() {
+  if (semanticSearchEnabled !== true) return null;
   if (semanticWorker) return semanticWorker;
   semanticWorker = new Worker(chrome.runtime.getURL('semantic-worker.js'), { type: 'module' });
+  const queryWorker = semanticWorker;
   semanticWorker.onmessage = ({ data }) => {
-    if (data.id !== semanticSequence || !searchInput.value.trim()) return;
+    if (data?.type === 'model-download-request') {
+      chrome.runtime.sendMessage({ action: 'ensureModelAsset', path: data.path })
+        .then(result => queryWorker.postMessage({ type: 'model-download-response', requestId: data.requestId, ...result }))
+        .catch(error => queryWorker.postMessage({ type: 'model-download-response', requestId: data.requestId, success: false, message: error.message }));
+      return;
+    }
+    if (semanticSearchEnabled !== true || data.id !== semanticSequence || !searchInput.value.trim()) return;
     if (data.type === 'progress') {
       setSemanticStatus(data.message);
     } else if (data.type === 'results') {
@@ -606,7 +718,9 @@ function getSemanticWorker() {
       if (data.pending) {
         setSemanticStatus(`${data.total - data.pending} of ${data.total} indexed · preparing the rest in the background`);
       } else {
-        setSemanticStatus('Results ranked by semantic similarity · processed locally');
+        setSemanticStatus(data.mode === 'ivf'
+          ? 'Approximate semantic results · processed locally'
+          : 'Results ranked by semantic similarity · processed locally');
       }
       drawSnapshots();
     } else if (data.type === 'error') {
@@ -628,7 +742,7 @@ function getSemanticWorker() {
 
 function scheduleSemanticSearch() {
   clearTimeout(semanticTimer);
-  const query = searchInput.value.trim();
+  const query = semanticSearchEnabled === true ? searchInput.value.trim() : '';
   semanticSequence++;
   semanticMatches = null;
   if (!query || !savedSnapshots.length) {
@@ -640,6 +754,7 @@ function scheduleSemanticSearch() {
   drawSnapshots();
   const id = semanticSequence;
   semanticTimer = setTimeout(() => {
+    if (semanticSearchEnabled !== true) return;
     try {
       getSemanticWorker().postMessage({
         type: 'search',
@@ -657,7 +772,7 @@ function scheduleSemanticSearch() {
 // The footer has a constant height while active, even between documents.
 let lastIndexSequence = -1;
 function renderIndexFooter(status) {
-  if (!status || !['idle', 'checking', 'indexing', 'complete', 'error'].includes(status.phase)) return;
+  if (semanticSearchEnabled !== true || !status || !['idle', 'checking', 'indexing', 'complete', 'error'].includes(status.phase)) return;
   if (!Number.isFinite(status.sequence) || status.sequence < lastIndexSequence) return;
   lastIndexSequence = status.sequence;
 
@@ -692,7 +807,7 @@ function renderIndexFooter(status) {
     indexFooterLabel.textContent = 'Indexing in background';
     indexFooterCount.textContent = `${indexed} / ${total} · ${percent}%`;
     indexFooterDetail.textContent = status.stage === 'loading-model'
-      ? 'Loading local AI model…'
+      ? 'Preparing AI model (first use downloads it)…'
       : chunkTotal && indexed < total
         ? `Manemark ${indexed + 1} · chunk ${chunksDone} of ${chunkTotal}`
         : '';
@@ -708,26 +823,55 @@ function renderIndexFooter(status) {
 // A hidden worker reports progress while this popup is open. On reopening,
 // ensureSemanticIndex also returns the current status from the offscreen page.
 chrome.runtime.onMessage.addListener(message => {
-  if (!['semanticIndexProgress', 'semanticIndexComplete', 'semanticIndexError'].includes(message.action)) return;
+  if (semanticSearchEnabled !== true || !['semanticIndexProgress', 'semanticIndexComplete', 'semanticIndexError'].includes(message.action)) return;
   renderIndexFooter(message.status);
   if (message.action === 'semanticIndexComplete' && searchInput.value.trim()) {
     scheduleSemanticSearch();
   }
 });
 
-chrome.runtime.sendMessage({ action: 'ensureSemanticIndex' })
-  .then(response => {
-    if (!response?.success) throw new Error(response?.message || 'Index service not available');
-    renderIndexFooter(response.status);
-  })
-  .catch(error => {
-    console.error('Manemark: cannot read background index status:', error);
-    // Do not overwrite a newer state that arrived in a live progress message.
-    if (lastIndexSequence < 0) {
-      renderIndexFooter({ phase: 'error', indexed: 0, total: savedSnapshots.length,
-        sequence: 0, message: 'Could not start background indexing: ' + error.message });
+function requestSemanticIndex() {
+  if (semanticSearchEnabled !== true) return;
+  chrome.runtime.sendMessage({ action: 'ensureSemanticIndex' })
+    .then(response => {
+      if (semanticSearchEnabled !== true) return;
+      if (!response?.success) throw new Error(response?.message || 'Index service not available');
+      renderIndexFooter(response.status);
+    })
+    .catch(error => {
+      if (semanticSearchEnabled !== true) return;
+      console.error('Manemark: cannot read background index status:', error);
+      // Do not overwrite a newer state that arrived in a live progress message.
+      if (lastIndexSequence < 0) {
+        renderIndexFooter({ phase: 'error', indexed: 0, total: savedSnapshots.length,
+          sequence: 0, message: 'Could not start background indexing: ' + error.message });
+      }
+    });
+}
+
+function applySemanticSearchPreference(enabled) {
+  if (semanticSearchEnabled === enabled) return;
+  semanticSearchEnabled = enabled;
+  semanticSearchCheckbox.checked = enabled;
+  searchContainer.hidden = !enabled;
+  semanticStatus.hidden = !enabled;
+  lastIndexSequence = -1;
+  if (!enabled) {
+    clearTimeout(semanticTimer);
+    semanticSequence++;
+    semanticMatches = null;
+    if (semanticWorker) {
+      semanticWorker.terminate();
+      semanticWorker = null;
     }
-  });
+    setSemanticStatus();
+    indexFooter.hidden = true;
+    drawSnapshots(); // Ignore a saved search query and show every Manemark.
+  } else {
+    scheduleSemanticSearch(); // Restore the query/filter from before disabling.
+    requestSemanticIndex();
+  }
+}
 
 /** Refresh list after captures, deletes, imports and tab state updates. */
 function renderSnapshots(snapshots) {
@@ -744,7 +888,7 @@ function getQualifiedSemanticMatches() {
 
 /** Null means no active query or that the search has not finished yet. */
 function getSearchResultSnapshots() {
-  if (!searchInput.value.trim() || !semanticMatches) return null;
+  if (semanticSearchEnabled !== true || !searchInput.value.trim() || !semanticMatches) return null;
   const snapshotsById = new Map(savedSnapshots.map(snapshot => [String(snapshot.id), snapshot]));
   return getQualifiedSemanticMatches()
     .map(match => snapshotsById.get(String(match.id)))
@@ -752,7 +896,7 @@ function getSearchResultSnapshots() {
 }
 
 function updateSearchExportOption() {
-  const isSearching = Boolean(searchInput.value.trim());
+  const isSearching = semanticSearchEnabled === true && Boolean(searchInput.value.trim());
   const results = getSearchResultSnapshots();
   exportSearchBtn.hidden = !isSearching;
   exportSearchBtn.disabled = !results || results.length === 0;
@@ -762,7 +906,7 @@ function updateSearchExportOption() {
 }
 
 function drawSnapshots() {
-  const query = searchInput.value.trim();
+  const query = semanticSearchEnabled === true ? searchInput.value.trim() : '';
   const isSearching = Boolean(query);
   const searchResults = getSearchResultSnapshots();
   let visibleSnapshots = isSearching ? (searchResults || []) : savedSnapshots;
@@ -838,6 +982,7 @@ function drawSnapshots() {
   // This happens after the semantic search has produced real DOM rows, not
   // during its initial blank/loading render.
   scrollToActiveManemark();
+  window.dispatchEvent(new CustomEvent('manemark-library-rendered', { detail: { snapshots: savedSnapshots } }));
 }
 
 /**
@@ -845,15 +990,26 @@ function drawSnapshots() {
  */
 function renderStats(snapshots) {
   const totalSnapshots = snapshots.length;
-  const totalTokens = snapshots.reduce(
-    (sum, snapshot) => sum + calculateSnapshotTokens(snapshot),
-    0
-  );
+  const counter = globalThis.ManeTokenCounter;
+  // Count stored document content. JSON ZIP files are counted separately,
+  // because their metadata/escaping contribute additional GPT tokens.
+  let tokenLabel = 'tokenizer not built';
+  if (counter && counter.encoding === 'o200k_base' && typeof counter.countTokens === 'function') {
+    try {
+      const totalTokens = snapshots.reduce(
+        (sum, snapshot) => sum + calculateSnapshotTokens(snapshot), 0
+      );
+      tokenLabel = `<strong>${totalTokens.toLocaleString()}</strong> content tokens`;
+    } catch (error) {
+      console.error('Manemark: token count failed:', error);
+      tokenLabel = 'token count unavailable';
+    }
+  }
 
   statsContainer.innerHTML = `
     <div class="stats">
-      <strong>${totalSnapshots}</strong> manemark${totalSnapshots !== 1 ? 's' : ''} • 
-      <strong>${totalTokens.toLocaleString()}</strong> total tokens
+      <strong>${totalSnapshots}</strong> manemark${totalSnapshots !== 1 ? 's' : ''} •
+      ${tokenLabel}
     </div>
   `;
 }
@@ -861,11 +1017,14 @@ function renderStats(snapshots) {
 /**
  * Copy snapshot text to clipboard
  */
-function copyToClipboard(id) {
+function copyToClipboard(id, button) {
+  if (button?.disabled) return;
+  setCopyButtonState(button, 'loading');
   chrome.runtime.sendMessage(
     { action: 'getSnapshots' },
     (response) => {
-      if (!response || !response.snapshots) {
+      if (chrome.runtime.lastError || !response || !response.snapshots) {
+        setCopyButtonState(button, 'idle');
         showToast('Error: Could not retrieve snapshot', 'error');
         return;
       }
@@ -873,12 +1032,15 @@ function copyToClipboard(id) {
       const snapshot = response.snapshots.find(s => s.id === id);
       if (snapshot && snapshot.text) {
         navigator.clipboard.writeText(snapshot.text).then(() => {
+          setCopyButtonState(button, 'success');
           showToast('✓ Text copied to clipboard!');
         }).catch((err) => {
+          setCopyButtonState(button, 'idle');
           console.error('Copy failed:', err);
           showToast('✗ Failed to copy text', 'error');
         });
       } else {
+        setCopyButtonState(button, 'idle');
         showToast('Error: Snapshot not found', 'error');
       }
     }
@@ -888,16 +1050,21 @@ function copyToClipboard(id) {
 /**
  * Copy a saved highlight's direct URL, rather than its selected text.
  */
-function copyLinkToClipboard(id) {
+function copyLinkToClipboard(id, button) {
+  if (button?.disabled) return;
+  setCopyButtonState(button, 'loading');
   const snapshot = savedSnapshots.find(s => s.id === id && s.type === 'highlight');
   if (!snapshot?.url) {
+    setCopyButtonState(button, 'idle');
     showToast('✗ Highlight link not found', 'error');
     return;
   }
 
   navigator.clipboard.writeText(snapshot.url).then(() => {
+    setCopyButtonState(button, 'success');
     showToast('✓ Highlight link copied!');
   }).catch(() => {
+    setCopyButtonState(button, 'idle');
     showToast('✗ Failed to copy highlight link', 'error');
   });
 }
@@ -943,24 +1110,27 @@ function clearAllSnapshots() {
 }
 
 /**
- * Estimate token count using a simple heuristic
- * Approximate: 1 token ≈ 4 characters
+ * GPT tokenizer is bundled locally at build time, NOT loaded from a CDN.
+ * Do not report heuristic numbers when the tokenizer is missing.
  */
-function estimateTokens(text) {
-  const words = text.trim().split(/\s+/).length;
-  return Math.ceil(words * 1.3);
+function countGptTokens(text) {
+  const counter = globalThis.ManeTokenCounter;
+  if (!counter || counter.encoding !== 'o200k_base' || typeof counter.countTokens !== 'function') {
+    throw new Error('GPT tokenizer bundle missing. Run npm install && npm run build in the Manemark folder.');
+  }
+  return counter.countTokens(String(text ?? ''));
 }
 
 /**
- * Calculate total tokens for a snapshot including metadata
+ * Stored text token counts are cached per fetched snapshot object. This makes
+ * repeated search redraws cheap without persisting any extra browser data.
  */
+const snapshotTokenCache = new WeakMap();
 function calculateSnapshotTokens(snapshot) {
-  const textTokens = estimateTokens(snapshot.text);
-  const titleTokens = estimateTokens(snapshot.title);
-  const urlTokens = estimateTokens(snapshot.url);
-  const overhead = 50;
-
-  return textTokens + titleTokens + urlTokens + overhead;
+  if (snapshotTokenCache.has(snapshot)) return snapshotTokenCache.get(snapshot);
+  const count = countGptTokens(snapshot.text || '');
+  snapshotTokenCache.set(snapshot, count);
+  return count;
 }
 
 /**
@@ -1046,112 +1216,200 @@ function exportSearchSnapshotsAsJson() {
 }
 
 /**
- * Export snapshots as token-aware chunked JSON files in a ZIP
- * Each JSON file respects the token limit
+ * Exact count of the entire JSON export file. The token count includes
+ * field names, JSON escapes, metadata, and pretty-print whitespace.
  */
-function exportSnapshotsAsZipWithTokens(tokenLimitPerFile) {
-  return new Promise((resolve) => {
-    chrome.runtime.sendMessage(
-      { action: 'getSnapshots' },
-      async (response) => {
-        try {
-          const snapshots = response.snapshots || [];
+function makeZipChunkPayload(snapshots, index, total, tokenLimit, exportedAt) {
+  const payload = {
+    chunk_number: index,
+    total_chunks: total,
+    entries_in_chunk: snapshots.length,
+    estimated_tokens: 0,
+    token_limit: tokenLimit,
+    manemarks: snapshots,
+    exported_at: exportedAt
+  };
+  // estimated_tokens itself changes the JSON. Recount until stable.
+  for (let i = 0; i < 12; i++) {
+    const count = countGptTokens(JSON.stringify(payload, null, 2));
+    if (count === payload.estimated_tokens) return payload;
+    payload.estimated_tokens = count;
+  }
+  // Very rare possibility of a token-count oscillation: use a conservative
+  // value but always independently validate the final file below.
+  return payload;
+}
 
-          if (snapshots.length === 0) {
-            showToast('No manemarks to export', 'error');
-            resolve();
-            return;
-          }
-
-          if (typeof JSZip === 'undefined') {
-            console.error('JSZip library not loaded');
-            showToast('✗ ZIP library not available', 'error');
-            resolve();
-            return;
-          }
-
-          const chunks = createTokenAwareChunks(snapshots, tokenLimitPerFile);
-          const zip = new JSZip();
-
-          chunks.forEach((chunk, index) => {
-            const chunkData = {
-              chunk_number: index + 1,
-              total_chunks: chunks.length,
-              entries_in_chunk: chunk.snapshots.length,
-              estimated_tokens: chunk.totalTokens,
-              token_limit: tokenLimitPerFile,
-              manemarks: chunk.snapshots,
-              exported_at: new Date().toISOString()
-            };
-
-            const fileName = `manemarks_chunk_${String(index + 1).padStart(3, '0')}.json`;
-            zip.file(fileName, JSON.stringify(chunkData, null, 2));
-          });
-
-          const totalTokens = chunks.reduce((sum, chunk) => sum + chunk.totalTokens, 0);
-          const metadata = {
-            export_date: new Date().toISOString(),
-            total_manemarks: snapshots.length,
-            total_chunks: chunks.length,
-            token_limit_per_file: tokenLimitPerFile,
-            estimated_total_tokens: totalTokens,
-            description: 'Text Snapper Export - Token-aware chunked JSON files for RAG compatibility'
-          };
-
-          zip.file('README.json', JSON.stringify(metadata, null, 2));
-
-          const blob = await zip.generateAsync({ type: 'blob' });
-          const url = URL.createObjectURL(blob);
-          const link = document.createElement('a');
-
-          link.href = url;
-          link.download = `text-snapper-export-${new Date().toISOString().split('T')[0]}.zip`;
-          link.click();
-
-          URL.revokeObjectURL(url);
-          showToast(`✓ Exported ${snapshots.length} manemarks in ${chunks.length} token-aware files`);
-        } catch (error) {
-          console.error('Export error:', error);
-          showToast('✗ Failed to create ZIP file', 'error');
-        } finally {
-          resolve();
-        }
-      }
-    );
-  });
+function countZipChunk(snapshots, limit, timestamp, index = 999999, total = 999999) {
+  const json = JSON.stringify(makeZipChunkPayload(snapshots, index, total, limit, timestamp), null, 2);
+  return countGptTokens(json);
 }
 
 /**
- * Create token-aware chunks from snapshots
- * Respects token limit per file
+ * Split a single oversized snapshot's text into lossless ordered parts.
+ * Only ZIP chunks are split; the saved Manemark and ordinary JSON exports
+ * remain unchanged. Part metadata lets a consumer reconstruct the text.
  */
-function createTokenAwareChunks(snapshots, tokenLimit) {
+function splitOversizedSnapshot(snapshot, tokenLimit, timestamp) {
+  if (typeof snapshot.text !== 'string' || snapshot.text.length === 0) {
+    throw new Error(`Manemark "${snapshot.title || snapshot.id}" has metadata larger than the ZIP token limit.`);
+  }
+
+  const originalText = snapshot.text;
+  const parts = [];
+  let offset = 0;
+  // The provisional 6-digit fields over-budget the final short counters.
+  // Keep a margin so packaging fields don't accidentally exceed the limit.
+  const budget = Math.max(0, tokenLimit - 24);
+
+  while (offset < originalText.length) {
+    const makePart = (text, partIndex) => ({
+      ...snapshot,
+      text,
+      textPreview: text.slice(0, 160),
+      part_number: partIndex,
+      total_parts: 999999,
+      source_snapshot_id: snapshot.id
+    });
+    const partIndex = parts.length + 1;
+    const remaining = originalText.length - offset;
+    let lo = 1;
+    let hi = remaining;
+    let best = 0;
+    // Binary search the maximum UTF-16 slice that fits the full JSON file.
+    while (lo <= hi) {
+      const mid = Math.floor((lo + hi) / 2);
+      const section = originalText.slice(offset, offset + mid);
+      const candidate = makePart(section, partIndex);
+      if (countZipChunk([candidate], tokenLimit, timestamp) <= budget) {
+        best = mid;
+        lo = mid + 1;
+      } else {
+        hi = mid - 1;
+      }
+    }
+    if (best === 0) {
+      throw new Error(`Token limit ${tokenLimit} is too small for Manemark "${snapshot.title || snapshot.id}" and its metadata.`);
+    }
+
+    let end = offset + best;
+    // Do not split surrogate pairs (emoji or other supplementary characters).
+    if (end < originalText.length && end > offset &&
+        /[\uD800-\uDBFF]/.test(originalText[end - 1]) &&
+        /[\uDC00-\uDFFF]/.test(originalText[end])) {
+      end--;
+    }
+    if (end === offset) {
+      throw new Error('Token limit is too small to preserve a complete Unicode character.');
+    }
+    // Prefer a recent line break, without dropping any characters.
+    const lastLineBreak = originalText.lastIndexOf('\n', end - 1);
+    if (lastLineBreak > offset + Math.floor((end - offset) * 0.6)) {
+      end = lastLineBreak + 1;
+    }
+
+    parts.push(makePart(originalText.slice(offset, end), partIndex));
+    offset = end;
+  }
+  for (const part of parts) part.total_parts = parts.length;
+  return parts;
+}
+
+/**
+ * Greedy packing: count real UTF-8/JSON text using GPT o200k_base BPE.
+ * Never produce an over-limit output, including for giant documents.
+ */
+function createTokenAwareChunks(snapshots, tokenLimit, timestamp = new Date().toISOString()) {
+  if (!Number.isInteger(tokenLimit) || tokenLimit < 500 || tokenLimit > 100000) {
+    throw new Error('Token limit must be an integer between 500 and 100000.');
+  }
+  // Ensure the tokenizer has been built even if snapshots is empty.
+  countGptTokens('');
   const chunks = [];
-  let currentChunk = {
-    snapshots: [],
-    totalTokens: 0
+  let pending = [];
+  const budget = tokenLimit - 24;
+  const flush = () => {
+    if (pending.length) chunks.push(pending);
+    pending = [];
   };
 
   for (const snapshot of snapshots) {
-    const snapshotTokens = calculateSnapshotTokens(snapshot);
-
-    if (currentChunk.totalTokens + snapshotTokens > tokenLimit && currentChunk.snapshots.length > 0) {
-      chunks.push(currentChunk);
-      currentChunk = {
-        snapshots: [],
-        totalTokens: 0
-      };
+    const singleCount = countZipChunk([snapshot], tokenLimit, timestamp);
+    if (singleCount > budget) {
+      flush();
+      for (const part of splitOversizedSnapshot(snapshot, tokenLimit, timestamp)) {
+        chunks.push([part]);
+      }
+    } else if (pending.length && countZipChunk([...pending, snapshot], tokenLimit, timestamp) > budget) {
+      flush();
+      pending.push(snapshot);
+    } else {
+      pending.push(snapshot);
     }
-
-    currentChunk.snapshots.push(snapshot);
-    currentChunk.totalTokens += snapshotTokens;
   }
+  flush();
 
-  if (currentChunk.snapshots.length > 0) {
-    chunks.push(currentChunk);
-  }
+  const output = chunks.map((entries, index) => {
+    const payload = makeZipChunkPayload(entries, index + 1, chunks.length, tokenLimit, timestamp);
+    const json = JSON.stringify(payload, null, 2);
+    const actualTokens = countGptTokens(json);
+    if (actualTokens > tokenLimit) {
+      throw new Error(`ZIP part ${index + 1} would contain ${actualTokens} tokens (limit ${tokenLimit}).`);
+    }
+    return { json, totalTokens: actualTokens, snapshots: entries };
+  });
+  return output;
+}
 
-  return chunks;
+/** Export ZIP with exactly counted, limit-checked JSON chunks. */
+function exportSnapshotsAsZipWithTokens(tokenLimitPerFile) {
+  return new Promise((resolve) => {
+    chrome.runtime.sendMessage({ action: 'getSnapshots' }, async (response) => {
+      try {
+        const snapshots = response?.snapshots || [];
+        if (snapshots.length === 0) {
+          showToast('No manemarks to export', 'error');
+          return;
+        }
+        if (typeof JSZip === 'undefined') {
+          throw new Error('ZIP library not available.');
+        }
+
+        const timestamp = new Date().toISOString();
+        const chunks = createTokenAwareChunks(snapshots, tokenLimitPerFile, timestamp);
+        const zip = new JSZip();
+        chunks.forEach((chunk, index) => {
+          const filename = `manemarks_chunk_${String(index + 1).padStart(3, '0')}.json`;
+          zip.file(filename, chunk.json);
+        });
+        const totalTokens = chunks.reduce((sum, chunk) => sum + chunk.totalTokens, 0);
+        zip.file('README.json', JSON.stringify({
+          export_date: timestamp,
+          total_manemarks: snapshots.length,
+          total_chunks: chunks.length,
+          token_limit_per_file: tokenLimitPerFile,
+          estimated_total_tokens: totalTokens,
+          tokenizer_encoding: 'o200k_base',
+          split_documents: 'For split entries, join text in part_number order for each source_snapshot_id.',
+          description: 'Manemark export: locally GPT-tokenized JSON chunks. Token counts include JSON serialization.'
+        }, null, 2));
+
+        const blob = await zip.generateAsync({ type: 'blob' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `manemark-gpt-tokens-${timestamp.slice(0, 10)}.zip`;
+        link.click();
+        setTimeout(() => URL.revokeObjectURL(url), 5000);
+        showToast(`✓ Exported ${snapshots.length} manemarks in ${chunks.length} GPT-counted JSON files`);
+      } catch (error) {
+        console.error('Export ZIP failed:', error);
+        showToast(`✗ ${error.message || 'Failed to create ZIP file'}`, 'error');
+      } finally {
+        resolve();
+      }
+    });
+  });
 }
 
 /**
@@ -1222,3 +1480,52 @@ function escapeHtml(text) {
   };
   return safeText.replace(/[&<>"']/g, m => map[m]);
 }
+// Independent of indexing: both bars can be displayed simultaneously.
+let downloadView = {};
+let downloadRefreshTimer;
+let receivedLiveDownloads = false;
+function renderModelDownloads(downloads) {
+  downloadView = downloads;
+  const footer = document.getElementById('downloadFooter');
+  const entries = Object.values(downloads);
+  const active = entries.filter(s => ['downloading', 'saving'].includes(s.phase) && Date.now() - s.updatedAt < 20 * 60 * 1000);
+  const errors = entries.filter(s => s.phase === 'error');
+  const recent = entries.filter(s => s.phase === 'complete' && Date.now() - s.updatedAt < 5000);
+  const visible = active.length ? active : errors.length ? errors : recent;
+  footer.hidden = !visible.length;
+  clearTimeout(downloadRefreshTimer);
+  if (!visible.length) return;
+  const failed = !active.length && errors.length > 0;
+  const complete = !active.length && !failed;
+  const total = active.reduce((sum, s) => sum + s.total, 0);
+  const loaded = active.reduce((sum, s) => sum + s.loaded, 0);
+  const known = active.length > 0 && active.every(s => s.total > 0);
+  const percent = complete ? 100 : known ? Math.min(99, Math.floor(loaded / total * 100)) : 0;
+  footer.classList.toggle('checking', !failed && !complete && !known);
+  footer.classList.toggle('error', failed);
+  const label = document.getElementById('downloadFooterLabel');
+  const count = document.getElementById('downloadFooterCount');
+  const detail = document.getElementById('downloadFooterDetail');
+  const track = document.getElementById('downloadFooterTrack');
+  document.getElementById('downloadFooterFill').style.width = known || complete ? percent + '%' : '35%';
+  if (known || complete) track.setAttribute('aria-valuenow', String(percent));
+  else track.removeAttribute('aria-valuenow');
+  const names = [...new Set(visible.map(s => s.path.startsWith('htmlsift-mini/') ? 'AI extraction' : 'Semantic search'))].join(' + ');
+  label.textContent = failed ? 'Model download interrupted' : complete ? 'Model files saved for offline use' : 'One-time model download';
+  const mb = n => (n / 1048576).toFixed(1) + ' MB';
+  count.textContent = complete ? '100%' : failed ? '' : known ? percent + '%' : loaded ? mb(loaded) : 'Connecting…';
+  detail.textContent = failed ? 'Try the feature again to retry. ' + errors[0].message
+    : complete ? 'Cached on this device — no download needed next time.'
+    : names + ' · ' + (known ? mb(loaded) + ' / ' + mb(total) + ' · ' : '') + 'Continues if you close this popup.';
+  detail.title = detail.textContent;
+  track.setAttribute('aria-valuetext', label.textContent + '. ' + count.textContent);
+  if (!failed) downloadRefreshTimer = setTimeout(() => renderModelDownloads(downloadView), 1000);
+}
+chrome.runtime.onMessage.addListener(message => {
+  if (message.action !== 'modelDownloadsChanged') return;
+  receivedLiveDownloads = true;
+  renderModelDownloads(message.downloads);
+});
+chrome.runtime.sendMessage({ action: 'getModelDownloads' }).then(result => {
+  if (!receivedLiveDownloads) renderModelDownloads(result?.downloads || {});
+}).catch(() => {});

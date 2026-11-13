@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Manemark</title>
+  <script src="presentation.js"></script>
   <style>
     * {
       margin: 0;
@@ -113,6 +114,7 @@
       background: white;
       flex-shrink: 0;
     }
+    .search-container[hidden] { display: none; }
 
     .search-field {
       display: flex;
@@ -520,6 +522,17 @@
       display: block;
     }
 
+    .copy-feedback-icon { width: 16px; height: 16px; display: block; }
+    .btn-page-copy .copy-feedback-icon { width: 20px; height: 20px; }
+    .copy-spinner { animation: copy-spin 0.8s linear infinite; }
+    .copy-loading:disabled { cursor: wait; opacity: 1; }
+    .copy-success { color: #16a34a; }
+    .btn-page-copy.copy-success { color: white; }
+    @keyframes copy-spin { to { transform: rotate(360deg); } }
+    @media (prefers-reduced-motion: reduce) {
+      .copy-spinner { animation-duration: 2s; }
+    }
+
     .btn-delete:hover {
       color: #ffffffb6;
     }
@@ -576,21 +589,37 @@
       }
     }
 
-    /* A permanent footer keeps the library summary on the left and settings on the right. */
+    /* Website link on the left, centred library stats, settings on the right. */
     .library-footer {
-      display: flex;
+      display: grid;
+      grid-template-columns: 34px minmax(0, 1fr) 34px 34px;
       align-items: center;
       flex-shrink: 0;
       min-height: 48px;
-      padding: 4px 14px 4px 20px;
+      padding: 4px 14px;
       border-top: 1px solid #e9dff0;
       background: #ffffff;
       gap: 8px;
     }
-    .footer-text { min-width: 0; flex: 1; text-align: left; }
+    .monitor-link {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 34px;
+      width: 34px;
+      padding: 6px;
+      border-radius: 8px;
+    }
+    .monitor-link:hover { background: #f1e7f5; }
+    .monitor-link:focus-visible {
+      outline: 2px solid #783393;
+      outline-offset: 2px;
+    }
+    .monitor-link img { width: 20px; height: 20px; opacity: 0.8; }
+    .footer-text { min-width: 0; text-align: center; }
     .stats {
       color: #777083;
-      text-align: left;
+      text-align: center;
       font-size: 12px;
       line-height: 1.4;
     }
@@ -628,6 +657,7 @@
     .back-button { background: #f3eaf7; color: #783393; font-size: 12px; padding: 7px 10px; }
     .back-button:hover { background: #e8d9f0; }
     .settings-section { border: 1px solid #e9dff0; border-radius: 10px; padding: 16px; }
+    .semantic-setting { margin-top: 20px; }
     .setting-option { display: flex; align-items: flex-start; gap: 10px; cursor: pointer; }
     .setting-check { margin-top: 2px; width: 17px; height: 17px; accent-color: #783393; flex-shrink: 0; }
     .setting-name { display: block; font-size: 14px; font-weight: 600; line-height: 1.4; }
@@ -812,7 +842,9 @@
       .btn-copy:hover,
       .btn-delete:hover {
         color: #ffffff;
-      }      body {
+      }
+
+      body {
         background: #111111;
         color: #e5e5e5;
       }
@@ -904,7 +936,8 @@
 
       .library-footer { background: #171717; border-color: #39303e; }
       .stats { color: #a3a3a3; }
-      .settings-button img { filter: invert(1); }
+      .monitor-link img, .settings-button img { filter: invert(1); }
+      .monitor-link:hover { background: #362a40; }
       .settings-button:hover, .settings-button[aria-pressed="true"] { background: #362a40; }
       .settings-heading h2 { color: #ead7f2; }
       .back-button { color: #e4c6ef; background: #362a40; }
@@ -944,13 +977,24 @@
         background: #52525b;
       }
     }
+    html.side-panel, html.side-panel body { width: 100%; height: 100%; min-width: 0; }
+    html.side-panel body { height: 100dvh; }
+    html.side-panel .header { padding-inline: 16px; }
+    html.side-panel .index-footer { padding-inline: 12px; }
+    .presentation-feedback { padding: 8px 14px; font-size: 12px; color: #ad3939; background: #fff0f0; flex-shrink: 0; }
+    .presentation-feedback[hidden] { display: none; }
+    @media (prefers-color-scheme: dark) {
+      #presentationIcon { filter: brightness(0) invert(0.85); }
+      .presentation-feedback { background: #382626; color: #ffb1b1; }
+    }
   </style>
+  <link rel="stylesheet" href="fullpage.css">
 </head>
 <body>
   <div class="container">
     <div class="header">
       <h1>
-        <img src="assets/sleepy_mane.png" alt="mane" class="header-icon" id="popIcon" />
+        <img src="assets/sleepy_mane.svg" alt="mane" class="header-icon" id="popIcon" />
       </h1>
       <div class="controls">
         <button class="btn-page-copy" id="copyPageBtn" aria-label="Copy page text without Manemarking" title="Copy page text (without saving)">
@@ -981,7 +1025,7 @@
       <input type="file" id="importFile" accept=".json" style="display: none;">
     </div>
 
-    <div class="search-container" role="search">
+    <div id="searchContainer" class="search-container" role="search" hidden>
       <div class="search-field">
         <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
           <circle cx="11" cy="11" r="7"></circle>
@@ -1002,13 +1046,23 @@
         <p id="noResultsDescription">Try a different question or clear the search.</p>
       </div>
       <div id="emptyState" class="empty-state">
-        <div class="empty-icon"><img src="assets/sleepy_mane.png" alt="" class="sleepy-icon"></div>
+        <div class="empty-icon"><img src="assets/sleepy_mane_animated.svg" alt="" class="sleepy-icon"></div>
         
         <h1>No Manemark yet</h1>
         <p>Click "Manemark" to capture text from this page</p>
       </div>
 
     </div>
+      <div id="downloadFooter" class="index-footer" role="status" aria-live="polite" aria-label="Background model downloads" hidden>
+        <div class="index-footer-top">
+          <span id="downloadFooterLabel" class="index-footer-label"></span>
+          <span id="downloadFooterCount" class="index-footer-count"></span>
+        </div>
+        <div id="downloadFooterTrack" class="index-footer-track" role="progressbar" aria-label="Downloading model files" aria-valuemin="0" aria-valuemax="100">
+          <div id="downloadFooterFill" class="index-footer-fill"></div>
+        </div>
+        <div id="downloadFooterDetail" class="index-footer-detail"></div>
+      </div>
       <div id="indexFooter" class="index-footer" role="status" aria-live="polite" aria-label="Background search indexing" hidden>
         <div class="index-footer-top">
           <span id="indexFooterLabel" class="index-footer-label"></span>
@@ -1029,17 +1083,29 @@
       <div class="settings-section">
         <label class="setting-option" for="aiExtractionCheckbox">
           <input type="checkbox" id="aiExtractionCheckbox" class="setting-check" checked disabled>
-          <span class="setting-name">AI content extraction</span>
+          <span class="setting-name">Content Extractor</span>
         </label>
-        <p class="setting-description">On (default): use local AI to save and copy the main page content only. Off: save and copy the raw webpage HTML, including its tags, without filtering.</p>
+        <p class="setting-description">Use local AI to save and extract the main page content only.</p>
+        <label class="setting-option semantic-setting" for="semanticSearchCheckbox">
+          <input type="checkbox" id="semanticSearchCheckbox" class="setting-check" checked disabled>
+          <span class="setting-name">Semantic Search</span>
+        </label>
+        <p class="setting-description">Show the search bar and use local MiniLM to cache embeddings in the background.</p>
         <p id="settingsFeedback" class="settings-feedback" role="alert"></p>
       </div>
     </section>
 
+    <div id="presentationFeedback" role="status" class="presentation-feedback" hidden></div>
     <footer class="library-footer">
+      <a class="monitor-link" href="popup.html?view=page" target="_blank" rel="noopener noreferrer" aria-label="Open full-page Manemark" title="Open full-page Manemark">
+        <img src="assets/monitor.svg" alt="">
+      </a>
       <div id="statsContainer" class="footer-text" aria-label="Manemark library statistics">
         <div class="stats"><strong>0</strong> manemarks</div>
       </div>
+      <button type="button" id="presentationBtn" class="settings-button" aria-label="Open in sidebar" title="Open in sidebar" disabled>
+        <img id="presentationIcon" src="assets/open-sidebar.svg" alt="">
+      </button>
       <button type="button" id="settingsBtn" class="settings-button" aria-label="Open settings" aria-controls="settingsView" aria-pressed="false" title="Settings">
         <img src="assets/cog.svg" alt="">
       </button>
@@ -1060,6 +1126,8 @@
   </div>
 
   <script src="jszip.min.js"></script>
+  <script src="vendor/gpt-tokenizer.bundle.js"></script>
   <script src="popup.js"></script>
+  <script type="module" src="fullpage.js"></script>
 </body>
 </html>

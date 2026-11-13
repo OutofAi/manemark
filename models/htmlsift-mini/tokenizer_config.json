@@ -1,0 +1,5 @@
+{
+  "tokenizer_class": "PreTrainedTokenizer",
+  "model_max_length": 100000000,
+  "clean_up_tokenization_spaces": false
+}

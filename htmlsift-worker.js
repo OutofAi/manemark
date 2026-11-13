@@ -1,42 +1,39 @@
+import { configureModelCache, getModelAsset } from './model-cache.mjs';
 // htmlsift Mini inference: INT8 token-embedding ONNX table -> mean pooling per
 // rendered line -> structural features -> BiGRU ONNX head -> sigmoid / 0.5.
-// Model assets are deliberately NOT shipped. See models/htmlsift-mini/README.
+// Model assets are deliberately NOT shipped. Downloaded on first use by model-cache.mjs.
 // Uses the same ONNX Runtime WASM already embedded in Transformers.js.
 import {
   AutoTokenizer, env, ManemarkOrtSession, ManemarkOrtTensor, ManemarkOrtEnv
 } from './vendor/transformers.min.js';
 
-const DIR = './models/htmlsift-mini/';
-const url = name => new URL(DIR+name, import.meta.url).href;
 const MAX_BLOCKS = 5000;
 const MAX_TOKENS = 60000;
+// Avoid materialising a whole long page's token embeddings at once. The ONNX
+// embedding table accepts a 1-D ids tensor, so batches produce the same pooled
+// line vectors while keeping intermediate tensors bounded.
+const TABLE_BATCH_TOKENS = 2048;
 let modelPromise;
 let chain = Promise.resolve();
 
-env.allowRemoteModels = false;
-env.allowLocalModels = true;
-env.useBrowserCache = false;
-env.localModelPath = new URL('./models/', import.meta.url).href;
+configureModelCache(env);
 env.backends.onnx.wasm.wasmPaths = new URL('./vendor/', import.meta.url).href;
 env.backends.onnx.wasm.numThreads = 1;
 ManemarkOrtEnv.wasm.wasmPaths = new URL('./vendor/', import.meta.url).href;
 ManemarkOrtEnv.wasm.numThreads = 1;
 
-async function getAsset(name) {
-  const response = await fetch(url(name));
-  if (!response.ok) throw new Error(`Missing htmlsift Mini file: models/htmlsift-mini/${name}. Download all four model files from Hugging Face and reload the extension.`);
-  return response;
-}
+const getAsset = name => getModelAsset('htmlsift-mini/' + name);
 
 async function loadModel() {
   if (modelPromise) return modelPromise;
   modelPromise = (async () => {
     // Test every asset BEFORE initiating a large ONNX session allocation.
-    const manifest = await (await getAsset('config.json')).json();
-    if (manifest.mode !== 'mini') throw new Error('htmlsift config.json must be for the mini model.');
+    const manifest = await (await getAsset('manifest.json')).json();
+    if (manifest.mode !== 'mini') throw new Error('htmlsift manifest.json must be for the mini model.');
     // tokenizers.json is the actual training tokenizer. The small
     // tokenizer_config.json file in this extension tells Transformers.js how
     // to instantiate its generic fast-tokenizer-compatible implementation.
+    await getAsset('tokenizer.json');
     const tokenizer = await AutoTokenizer.from_pretrained('htmlsift-mini', {
       local_files_only: true
     });
@@ -88,51 +85,72 @@ function buildFeatures(flat, n, manifest) {
 }
 
 function prepTokens(blocks, tok, cap) {
-  // Mini is a bag-of-token-embeddings model, so it does NOT need the encoder's
-  // full-page token windows. Tokenizing each line individually preserves mean
-  // pooled line content without relying on offset-mapping APIs (unavailable in
-  // Transformers.js). Differences at line boundaries can cause small drift
-  // relative to the Python tokenizer's joined-page tokenization.
-  const ids = []; const members=[];
+  const ids = [];
+  const lengths = [];
   for (const block of blocks) {
-    const blockIds=tok.encode(block,{add_special_tokens:false});
-    const take=cap>0?Math.min(blockIds.length,cap):blockIds.length;
-    const mem=[];
-    for (let j=0;j<take;j++) {
-      mem.push(ids.length);
-      ids.push(BigInt(blockIds[j]));
+    const blockIds = tok.encode(block, { add_special_tokens: false });
+    const take = cap > 0 ? Math.min(blockIds.length, cap) : blockIds.length;
+    if (ids.length + take > MAX_TOKENS) {
+      throw new Error(`Page has too many tokens (over ${MAX_TOKENS}).`);
     }
-    members.push(mem);
-    if (ids.length > MAX_TOKENS) throw new Error(`Page has too many tokens (over ${MAX_TOKENS}).`);
+    lengths.push(take);
+    for (let j = 0; j < take; j++) ids.push(BigInt(blockIds[j]));
   }
-  return {ids:BigInt64Array.from(ids),members};
+  return { ids: BigInt64Array.from(ids), lengths };
 }
 
-function pool(emb, members, hidden) {
-  const pooled=new Float32Array(members.length*hidden);
-  for (let i=0;i<members.length;i++) {
-    const mem=members[i];
-    if (!mem.length) continue;
-    for (const id of mem) {
-      const p=id*hidden; const q=i*hidden;
-      for (let k=0;k<hidden;k++) pooled[q+k]+=emb[p+k];
+async function poolTokenBatches(table, ids, lengths) {
+  let pooled = null;
+  let hidden = 0;
+  let line = 0;
+  let tokensInLine = 0;
+  for (let start = 0; start < ids.length; start += TABLE_BATCH_TOKENS) {
+    const batch = ids.subarray(start, Math.min(ids.length, start + TABLE_BATCH_TOKENS));
+    const result = await table.run({ ids: new ManemarkOrtTensor('int64', batch, [batch.length]) });
+    const emb = result.out;
+    try {
+      if (!emb || emb.dims.length !== 2 || emb.dims[0] !== batch.length) {
+        throw new Error('Unexpected htmlsift table output shape.');
+      }
+      if (!pooled) {
+        hidden = emb.dims[1];
+        pooled = new Float32Array(lengths.length * hidden);
+      } else if (emb.dims[1] !== hidden) {
+        throw new Error('htmlsift table returned inconsistent embedding widths.');
+      }
+      // Token order is preserved across batches; empty lines have zero length.
+      // Accumulate directly into line vectors, not a page-sized embedding array.
+      for (let t = 0; t < batch.length; t++) {
+        while (line < lengths.length && tokensInLine >= lengths[line]) {
+          line++;
+          tokensInLine = 0;
+        }
+        if (line >= lengths.length) throw new Error('htmlsift token alignment failed.');
+        const source = t * hidden;
+        const target = line * hidden;
+        for (let k = 0; k < hidden; k++) pooled[target + k] += emb.data[source + k];
+        tokensInLine++;
+      }
+    } finally {
+      // Release the inference output instead of waiting for garbage collection.
+      emb?.dispose?.();
     }
-    const q=i*hidden;
-    for (let k=0;k<hidden;k++) pooled[q+k]/=mem.length;
   }
-  return pooled;
+  for (let lineIndex = 0; lineIndex < lengths.length; lineIndex++) {
+    const count = lengths[lineIndex];
+    if (!count) continue;
+    const offset = lineIndex * hidden;
+    for (let k = 0; k < hidden; k++) pooled[offset + k] /= count;
+  }
+  return { pooled, hidden };
 }
 
 async function predict(blocks, features) {
   if (blocks.length>MAX_BLOCKS) throw new Error(`Page has more than ${MAX_BLOCKS} rendered lines.`);
   const { manifest, tokenizer, table, head }=await loadModel();
-  const { ids, members }=prepTokens(blocks,tokenizer,manifest.cap || 0);
+  const { ids, lengths }=prepTokens(blocks,tokenizer,manifest.cap || 0);
   if (!ids.length) return {text:'',blocks:0};
-  const result = await table.run({ids:new ManemarkOrtTensor('int64',ids,[ids.length])});
-  const emb=result.out;
-  if (!emb || emb.dims.length!==2 || emb.dims[0]!==ids.length) throw new Error('Unexpected htmlsift table output shape.');
-  const hidden=emb.dims[1];
-  const pooled=pool(emb.data,members,hidden);
+  const { pooled, hidden } = await poolTokenBatches(table, ids, lengths);
   const normalized=buildFeatures(features,blocks.length,manifest);
   const width=hidden+(normalized.width || 0);
   const x=new Float32Array(blocks.length*width);
@@ -142,13 +160,17 @@ async function predict(blocks, features) {
   }
   const scored=await head.run({x:new ManemarkOrtTensor('float32',x,[1,blocks.length,width])});
   const logits=scored.logits;
-  if (!logits || logits.data.length!==blocks.length) throw new Error('Unexpected htmlsift head logits shape.');
-  const selected=[];
-  for (let i=0;i<blocks.length;i++) {
-    const prob=1/(1+Math.exp(-Number(logits.data[i])));
-    if (prob>0.5) selected.push(blocks[i]);
+  try {
+    if (!logits || logits.data.length!==blocks.length) throw new Error('Unexpected htmlsift head logits shape.');
+    const selected=[];
+    for (let i=0;i<blocks.length;i++) {
+      const prob=1/(1+Math.exp(-Number(logits.data[i])));
+      if (prob>0.5) selected.push(blocks[i]);
+    }
+    return {text:selected.join('\n'),blocks:selected.length};
+  } finally {
+    logits?.dispose?.();
   }
-  return {text:selected.join('\n'),blocks:selected.length};
 }
 
 self.onmessage=({data})=>{

@@ -3,8 +3,8 @@
   "version": "3.8.1",
   "files": {
     "transformers.min.js": {
-      "bytes": 888173,
-      "sha256": "aa5002b70e789798da263f5f99c62bd3e8fcd0c119258a493c40c180648365fa"
+      "bytes": 888408,
+      "sha256": "6f5355d9033b0f007714fdab600f414c284d77b9cc7a335ae6f3609054f61297"
     },
     "ort-wasm-simd-threaded.jsep.mjs": {
       "bytes": 44484,
